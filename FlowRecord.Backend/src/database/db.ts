@@ -1,7 +1,7 @@
-import { Pool } from 'pg';
-import dotenv from 'dotenv';
+import { Pool } from 'pg'
+import dotenv from 'dotenv'
 
-dotenv.config();
+dotenv.config()
 
 const pool = new Pool({
     host: process.env.DB_HOST,
@@ -9,15 +9,15 @@ const pool = new Pool({
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-});
+})
 
 pool.on('connect', () => {
-    console.log('✓ Connected to PostgreSQL database');
-});
+    console.log('✓ Connected to PostgreSQL database')
+})
 
 pool.on('error', (err) => {
-    console.error('✗ Unexpected database error:', err);
-    process.exit(-1);
-});
+    console.error('✗ Unexpected database error:', err)
+    process.exit(-1)
+})
 
-export default pool;
+export default pool
