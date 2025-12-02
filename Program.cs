@@ -115,7 +115,6 @@ class FlowRecordMonitor
         }
     }
 
-
     [SupportedOSPlatform("windows")]
     static string GetActiveWindowTitle()
     {
