@@ -13,7 +13,7 @@ class FlowRecordMonitor
     [DllImport("user32.dll")]
     static extern IntPtr GetForegroundWindow();
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
 
     [DllImport("user32.dll")]
@@ -22,7 +22,7 @@ class FlowRecordMonitor
     private static string currentWindow = "";
     private static DateTime windowStartTime = DateTime.Now;
     private static string? connectionString;
-    private static string pcName = Environment.MachineName;
+    private static readonly string pcName = Environment.MachineName;
 
     [SupportedOSPlatform("windows")]
     static async Task Main(string[] args)
@@ -43,10 +43,10 @@ class FlowRecordMonitor
 
             // 接続文字列を構築
             connectionString = $"Host={Environment.GetEnvironmentVariable("DB_HOST")};" +
-                               $"Port={Environment.GetEnvironmentVariable("DB_PORT") ?? "5432"};" +
-                               $"Username={Environment.GetEnvironmentVariable("DB_USER")};" +
-                               $"Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};" +
-                               $"Database={Environment.GetEnvironmentVariable("DB_NAME")}";
+                               $" Database={Environment.GetEnvironmentVariable("DB_NAME")};" +
+                               $" Username={Environment.GetEnvironmentVariable("DB_USER")};" +
+                               $" Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};" +
+                               " SSL Mode=VerifyFull; Channel Binding=Require;";
 
             // データベース接続テスト
             await TestDatabaseConnection();
@@ -192,8 +192,8 @@ class FlowRecordMonitor
             cmd.Parameters.AddWithValue("window_title", windowTitle);
             cmd.Parameters.AddWithValue("event_type", eventType);
             cmd.Parameters.AddWithValue("start_time", startTime);
-            cmd.Parameters.AddWithValue("end_time", endTime.HasValue ? (object)endTime.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("duration_seconds", durationSeconds.HasValue ? (object)durationSeconds.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("end_time", endTime.HasValue ? endTime.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("duration_seconds", durationSeconds.HasValue ? durationSeconds.Value : DBNull.Value);
             
             await cmd.ExecuteNonQueryAsync();
 
