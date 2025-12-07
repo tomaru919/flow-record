@@ -1,24 +1,28 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 
-declare global {
-  interface Window {
-    chrome?: {
-      webview: {
-        postMessage(message: any): void;
-        addEventListener(type: string, listener: (event: any) => void): void;
-        removeEventListener(type: string, listener: (event: any) => void): void;
-      }
-    }
-  }
-}
-
 interface Record {
   window_title: string
   event_type: string
   start_time: string
   end_time: string
   duration: number | null
+}
+
+interface WebViewMessageEvent {
+  data: Record[]
+}
+
+declare global {
+  interface Window {
+    chrome?: {
+      webview: {
+        postMessage(message: string): void
+        addEventListener(type: string, listener: (event: WebViewMessageEvent) => void): void
+        removeEventListener(type: string, listener: (event: WebViewMessageEvent) => void): void
+      }
+    }
+  }
 }
 
 function App() {
@@ -35,7 +39,7 @@ function App() {
   useEffect(() => {
     // WebView2からのメッセージ受信設定
     if (window.chrome?.webview) {
-      window.chrome.webview.addEventListener('message', (event: any) => {
+      window.chrome.webview.addEventListener('message', (event) => {
         const data = event.data // JSON object already parsed or string
         setRecords(data)
       })

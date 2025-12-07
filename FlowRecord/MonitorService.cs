@@ -153,7 +153,7 @@ namespace FlowRecord.Monitor
                 // 直近100件などを取得
                 var cmd = new NpgsqlCommand("SELECT * FROM records ORDER BY start_time DESC LIMIT 100", conn);
                 var reader = await cmd.ExecuteReaderAsync();
-                var results = new System.Collections.Generic.List<object>();
+                var results = new List<object>();
                 while(await reader.ReadAsync()) {
                     results.Add(new {
                         window_title = reader["window_title"].ToString(),

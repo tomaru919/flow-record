@@ -10,7 +10,7 @@ namespace FlowRecord
     {
         // 修正1: 'NotifyIcon?' とし、初期値をnull許容にします
         private NotifyIcon? _notifyIcon;
-        private MonitorService _monitorService;
+        private readonly MonitorService _monitorService;
         private bool _isExiting = false;
 
         public MainWindow()
