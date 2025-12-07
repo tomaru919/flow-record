@@ -41,8 +41,10 @@ function App() {
     if (window.chrome?.webview) {
       window.chrome.webview.addEventListener('message', (event) => {
         const data = event.data // JSON object already parsed or string
+        console.log("Received data from WebView2:", data)
         setRecords(data)
       })
+
       // 初回ロード時にデータ要求
       refreshData()
     }

@@ -13,10 +13,25 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3595.46" />
-    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="9.0.0" />
     <PackageReference Include="System.Management" Version="9.0.0" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
     <PackageReference Include="DotNetEnv" Version="3.0.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".env" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="npm install" WorkingDirectory="..\frontend" />
+    <Exec Command="npm run build" WorkingDirectory="..\frontend" />
+
+    <RemoveDir Directories="$(OutDir)wwwroot" />
+
+    <ItemGroup>
+      <FrontendFiles Include="..\frontend\dist\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FrontendFiles)" DestinationFolder="$(OutDir)wwwroot\%(RecursiveDir)" />
+  </Target>
 
 </Project>

@@ -1,14 +1,14 @@
-﻿using System.Windows;
+﻿using System.IO;
+using System.Windows;
 using Microsoft.Web.WebView2.Core;
-using System.Windows.Forms; // トレイアイコン用
-using Microsoft.Win32; // レジストリ用
+using System.Windows.Forms; // NotifyIcon用
+using Microsoft.Win32; // Registry用
 using FlowRecord.Monitor;
 
 namespace FlowRecord
 {
     public partial class MainWindow : Window
     {
-        // 修正1: 'NotifyIcon?' とし、初期値をnull許容にします
         private NotifyIcon? _notifyIcon;
         private readonly MonitorService _monitorService;
         private bool _isExiting = false;
@@ -19,7 +19,6 @@ namespace FlowRecord
             InitializeTrayIcon();
             SetStartup();
 
-            // 監視サービスの開始
             _monitorService = new MonitorService();
             _monitorService.Initialize();
             _monitorService.Start();
@@ -29,11 +28,27 @@ namespace FlowRecord
 
         private async void InitializeWebView()
         {
+            // WebView2の環境を初期化
             await webView.EnsureCoreWebView2Async();
-            
-            // 開発中はViteサーバーのURL、ビルド後はローカルファイル
-            webView.Source = new Uri("http://localhost:5173"); 
-            
+
+            // ビルド済みフロントエンドファイルのパス（実行ファイル直下の wwwroot フォルダを想定）
+            var userDataFolder = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+
+#if DEBUG
+            // 【開発時】ViteサーバーのURL
+            webView.CoreWebView2.Navigate("http://localhost:5173");
+#else
+            // 【本番時】ローカルファイルを仮想ドメインとしてマッピング
+            // これにより "https://app.flowrecord/index.html" でローカルファイルにアクセスできます
+            // (CORSエラーなどを防ぐための推奨設定です)
+            webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "app.flowrecord", 
+                userDataFolder, 
+                CoreWebView2HostResourceAccessKind.Allow
+            );
+            webView.CoreWebView2.Navigate("https://app.flowrecord/index.html");
+#endif
+
             webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
         }
 
@@ -74,35 +89,29 @@ namespace FlowRecord
         {
             _isExiting = true;
             _monitorService.Stop();
-            
-            // 修正2: nullチェックをしてからDisposeする
             _notifyIcon?.Dispose();
-            
             System.Windows.Application.Current.Shutdown();
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            // 閉じるボタンで終了せず隠す
             if (!_isExiting)
             {
                 e.Cancel = true;
                 Hide();
             }
         }
-        
-        private static void SetStartup()
+
+        private void SetStartup()
         {
             try {
                 using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
-                
-                // 修正3: MainModuleがnullでないことを確認してからアクセスする
                 var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
                 if (currentModule?.FileName != null)
                 {
                     key?.SetValue("FlowRecord", currentModule.FileName);
                 }
-            } catch { /* 権限エラー等は無視 */ }
+            } catch { /* 無視 */ }
         }
     }
 }
