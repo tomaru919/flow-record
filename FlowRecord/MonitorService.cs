@@ -160,7 +160,7 @@ namespace FlowRecord.Monitor
                         event_type = reader["event_type"].ToString(),
                         start_time = reader["start_time"].ToString(),
                         end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString(),
-                        duration = reader["duration_seconds"]
+                        duration = reader["duration_seconds"] == DBNull.Value ? null : reader["duration_seconds"]
                     });
                 }
                 return System.Text.Json.JsonSerializer.Serialize(results);
