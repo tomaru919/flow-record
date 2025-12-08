@@ -43,13 +43,12 @@ public partial class MainWindow : Window
         // これにより "https://app.flowrecord/index.html" でローカルファイルにアクセスできます
         // (CORSエラーなどを防ぐための推奨設定です)
         webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-            "app.flowrecord", 
-            userDataFolder, 
+            "app.flowrecord",
+            userDataFolder,
             CoreWebView2HostResourceAccessKind.Allow
         );
         webView.CoreWebView2.Navigate("https://app.flowrecord/index.html");
 #endif
-
         webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
     }
 
@@ -107,6 +106,20 @@ public partial class MainWindow : Window
     {
         try {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
+            if (key == null) return;
+#if DEBUG
+            // 【開発時 (Debug)
+            // 開発用のパスが登録されていたら邪魔になるため、スタートアップから削除する
+            key.DeleteValue("FlowRecord", false);
+#else
+            // 【本番時 (Release)】
+            // 実行中のファイルのフルパスを取得して登録する
+            var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
+            if (currentModule?.FileName != null)
+            {
+                key.SetValue("FlowRecord", currentModule.FileName);
+            }
+#endif
             var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
             if (currentModule?.FileName != null)
             {
