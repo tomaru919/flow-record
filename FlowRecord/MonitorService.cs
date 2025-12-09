@@ -43,7 +43,7 @@ public class MonitorService
     {
         _cts?.Cancel();
         // 終了時に最後のウィンドウを記録
-            _ = SaveRecordToDbAsync(currentWindow, "window_close", windowStartTime, DateTime.Now);
+        _ = SaveRecordToDbAsync(currentWindow, "window_close", windowStartTime, DateTime.Now);
     }
 
     private async Task MonitoringLoop(CancellationToken token)
@@ -78,9 +78,6 @@ public class MonitorService
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
     }
-
-    // ... GetActiveWindowTitle, OnSessionSwitch, OnPowerModeChanged は既存コードと同じ実装 ...
-    // 省略せずに実装してください (既存コードをコピー)
 
     private string GetActiveWindowTitle()
     {

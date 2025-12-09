@@ -1,7 +1,6 @@
 ﻿using System.IO;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
-using System.Windows.Forms; // NotifyIcon用
 using Microsoft.Win32; // Registry用
 using FlowRecord.Monitor;
 
@@ -18,7 +17,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeTrayIcon();
-        SetStartup();
+            SetStartup();
 
         _monitorService = new MonitorService();
         _monitorService.Initialize();
@@ -64,9 +63,16 @@ public partial class MainWindow : Window
 
     private void InitializeTrayIcon()
     {
+        // リソースからアイコンのストリームを取得
+        var iconUri = new Uri("pack://application:,,,/app.ico");
+        var iconStreamInfo = System.Windows.Application.GetResourceStream(iconUri);
+
+        // ストリームからSystem.Drawing.Iconを作成
+        var icon = new Icon(iconStreamInfo.Stream);
+
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = icon,
             Visible = true,
             Text = "FlowRecord Monitor"
         };
@@ -102,7 +108,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SetStartup()
+    private static void SetStartup()
     {
         try {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
