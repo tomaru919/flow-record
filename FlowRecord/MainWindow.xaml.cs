@@ -120,11 +120,6 @@ public partial class MainWindow : Window
                 key.SetValue("FlowRecord", currentModule.FileName);
             }
 #endif
-            var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
-            if (currentModule?.FileName != null)
-            {
-                key?.SetValue("FlowRecord", currentModule.FileName);
-            }
         } catch { /* 無視 */ }
     }
 }
