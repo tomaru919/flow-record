@@ -26,11 +26,16 @@ public class MonitorService
         var envPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".env"));
         if (File.Exists(envPath)) Env.Load(envPath);
 
-        connectionString = $"Host={Environment.GetEnvironmentVariable("DB_HOST")};" +
-                            $" Database={Environment.GetEnvironmentVariable("DB_NAME")};" +
-                            $" Username={Environment.GetEnvironmentVariable("DB_USER")};" +
-                            $" Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};" +
-                            " SSL Mode=Require;Trust Server Certificate=true";
+        // connectionString = $"Host={Environment.GetEnvironmentVariable("DB_HOST")};" +
+        //                     $" Database={Environment.GetEnvironmentVariable("DB_NAME")};" +
+        //                     $" Username={Environment.GetEnvironmentVariable("DB_USER")};" +
+        //                     $" Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};" +
+        //                     " SSL Mode=VerifyFull; Channel Binding=Require;";
+        connectionString = $"User Id={Environment.GetEnvironmentVariable("SUPABASE_USER")};" +
+                            $"Password={Environment.GetEnvironmentVariable("SUPABASE_PASSWORD")};" +
+                            $"Server={Environment.GetEnvironmentVariable("SUPABASE_SERVER")};" +
+                            $"Port=6543;" +
+                            $"Database={Environment.GetEnvironmentVariable("SUPABASE_DB")};";
     }
 
     public void Start()

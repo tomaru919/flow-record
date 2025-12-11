@@ -3,6 +3,8 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32; // Registry用
 using FlowRecord.Monitor;
+using System.Windows.Forms;
+using System.Drawing;
 
 namespace FlowRecord
 {
