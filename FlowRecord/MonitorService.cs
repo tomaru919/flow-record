@@ -30,7 +30,7 @@ public class MonitorService
                             $" Database={Environment.GetEnvironmentVariable("DB_NAME")};" +
                             $" Username={Environment.GetEnvironmentVariable("DB_USER")};" +
                             $" Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};" +
-                            " SSL Mode=VerifyFull; Channel Binding=Require;";
+                            " SSL Mode=Require;Trust Server Certificate=true";
     }
 
     public void Start()
