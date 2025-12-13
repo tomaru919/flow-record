@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeTrayIcon();
-            SetStartup();
+        SetStartup();
 
         _monitorService = new MonitorService();
         _monitorService.Initialize();
@@ -112,7 +112,8 @@ public partial class MainWindow : Window
 
     private static void SetStartup()
     {
-        try {
+        try
+        {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
             if (key == null) return;
 #if DEBUG
@@ -128,7 +129,8 @@ public partial class MainWindow : Window
                 key.SetValue("FlowRecord", currentModule.FileName);
             }
 #endif
-        } catch { /* 無視 */ }
+        }
+        catch { /* 無視 */ }
     }
 }
 

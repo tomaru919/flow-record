@@ -75,29 +75,32 @@ public class MonitorService
             catch (TaskCanceledException) { break; }
             catch (Exception ex) { Debug.WriteLine($"Error: {ex.Message}"); }
         }
-        
+
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
     }
 
-    private string GetActiveWindowTitle()
+    private static string GetActiveWindowTitle()
     {
-            IntPtr handle = GetForegroundWindow();
-        StringBuilder text = new StringBuilder(256);
+        IntPtr handle = GetForegroundWindow();
+        StringBuilder text = new(256);
         if (GetWindowText(handle, text, 256) > 0)
         {
-            GetWindowThreadProcessId(handle, out uint processId);
-            try {
+            _ = GetWindowThreadProcessId(handle, out uint processId);
+            try
+            {
                 Process process = Process.GetProcessById((int)processId);
                 return $"{process.ProcessName} - {text}";
-            } catch { return text.ToString(); }
+            }
+            catch { return text.ToString(); }
         }
         return "";
     }
 
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
     {
-        string eventType = e.Reason switch {
+        string eventType = e.Reason switch
+        {
             SessionSwitchReason.SessionLock => "lock",
             SessionSwitchReason.SessionUnlock => "unlock",
             SessionSwitchReason.SessionLogoff => "logoff",
@@ -109,7 +112,8 @@ public class MonitorService
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
-        string eventType = e.Mode switch {
+        string eventType = e.Mode switch
+        {
             PowerModes.Suspend => "sleep",
             PowerModes.Resume => "resume",
             _ => "unknown"
@@ -118,9 +122,14 @@ public class MonitorService
     }
 
     // DB保存メソッド
-    private async Task SaveRecordToDbAsync(string windowTitle, string eventType, DateTime startTime, DateTime? endTime)
+    private async Task SaveRecordToDbAsync(
+        string windowTitle,
+        string eventType,
+        DateTime startTime,
+        DateTime? endTime
+    )
     {
-            try
+        try
         {
             int? durationSeconds = null;
             if (endTime.HasValue) durationSeconds = (int)Math.Floor((endTime.Value - startTime).TotalSeconds);
@@ -128,9 +137,9 @@ public class MonitorService
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-                INSERT INTO records (pc_name, window_title, event_type, start_time, end_time, duration_seconds)
-                VALUES (@pc_name, @window_title, @event_type, @start_time, @end_time, @duration_seconds)";
-            
+            INSERT INTO records (pc_name, window_title, event_type, start_time, end_time, duration_seconds)
+            VALUES (@pc_name, @window_title, @event_type, @start_time, @end_time, @duration_seconds)";
+
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name", pcName);
             cmd.Parameters.AddWithValue("window_title", windowTitle ?? "");
@@ -146,15 +155,18 @@ public class MonitorService
     // フロントエンド用データ取得メソッド
     public async Task<string> GetRecordsJsonAsync()
     {
-        try {
+        try
+        {
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             // 直近100件などを取得
             var cmd = new NpgsqlCommand("SELECT * FROM records ORDER BY start_time DESC LIMIT 100", conn);
             var reader = await cmd.ExecuteReaderAsync();
             var results = new List<object>();
-            while(await reader.ReadAsync()) {
-                results.Add(new {
+            while (await reader.ReadAsync())
+            {
+                results.Add(new
+                {
                     window_title = reader["window_title"].ToString(),
                     event_type = reader["event_type"].ToString(),
                     start_time = reader["start_time"].ToString(),
@@ -163,7 +175,8 @@ public class MonitorService
                 });
             }
             return System.Text.Json.JsonSerializer.Serialize(results);
-        } catch { return "[]"; }
+        }
+        catch { return "[]"; }
     }
 }
 
