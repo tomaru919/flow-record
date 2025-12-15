@@ -4,12 +4,15 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <ApplicationIcon>app.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,16 +27,18 @@
     <Resource Include="app.ico" />
   </ItemGroup>
 
-  <Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+<Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Message Importance="high" Text="Building React Frontend..." />
     <Exec Command="npm install" WorkingDirectory="..\frontend" />
     <Exec Command="npm run build" WorkingDirectory="..\frontend" />
 
-    <RemoveDir Directories="$(OutDir)wwwroot" />
-
     <ItemGroup>
-      <FrontendFiles Include="..\frontend\dist\**\*.*" />
+      <Content Include="..\frontend\dist\**">
+        <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
     </ItemGroup>
-    <Copy SourceFiles="@(FrontendFiles)" DestinationFolder="$(OutDir)wwwroot\%(RecursiveDir)" />
   </Target>
 
 </Project>
