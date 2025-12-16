@@ -6,7 +6,7 @@ using DotNetEnv;
 using Microsoft.Win32;
 using Npgsql;
 
-namespace FlowRecord.Monitor {
+namespace FlowRecord.Monitor;
 
 public class MonitorService {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -152,6 +152,4 @@ public class MonitorService {
             return System.Text.Json.JsonSerializer.Serialize(results);
         } catch { return "[]"; }
     }
-}
-
 }

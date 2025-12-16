@@ -6,7 +6,7 @@ using FlowRecord.Monitor;
 using System.Windows.Forms;
 using System.Drawing;
 
-namespace FlowRecord {
+namespace FlowRecord;
 
 public partial class MainWindow : Window {
     private NotifyIcon? _notifyIcon;
@@ -117,6 +117,4 @@ public partial class MainWindow : Window {
 #endif
         } catch { /* 無視 */ }
     }
-}
-
 }
