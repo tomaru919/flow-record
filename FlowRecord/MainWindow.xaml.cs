@@ -6,17 +6,14 @@ using FlowRecord.Monitor;
 using System.Windows.Forms;
 using System.Drawing;
 
-namespace FlowRecord
-{
+namespace FlowRecord {
 
-public partial class MainWindow : Window
-{
+public partial class MainWindow : Window {
     private NotifyIcon? _notifyIcon;
     private readonly MonitorService _monitorService;
     private bool _isExiting = false;
 
-    public MainWindow()
-    {
+    public MainWindow() {
         InitializeComponent();
         InitializeTrayIcon();
         SetStartup();
@@ -28,8 +25,7 @@ public partial class MainWindow : Window
         InitializeWebView();
     }
 
-    private async void InitializeWebView()
-    {
+    private async void InitializeWebView() {
         // WebView2の環境を初期化
         await webView.EnsureCoreWebView2Async();
 
@@ -40,31 +36,28 @@ public partial class MainWindow : Window
         // 【開発時】ViteサーバーのURL
         webView.CoreWebView2.Navigate("http://localhost:5173");
 #else
-        // 【本番時】ローカルファイルを仮想ドメインとしてマッピング
-        // これにより "https://app.flowrecord/index.html" でローカルファイルにアクセスできます
-        // (CORSエラーなどを防ぐための推奨設定です)
-        webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-            "app.flowrecord",
-            userDataFolder,
-            CoreWebView2HostResourceAccessKind.Allow
-        );
-        webView.CoreWebView2.Navigate("https://app.flowrecord/index.html");
+    // 【本番時】ローカルファイルを仮想ドメインとしてマッピング
+    // これにより "https://app.flowrecord/index.html" でローカルファイルにアクセスできます
+    // (CORSエラーなどを防ぐための推奨設定です)
+    webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+        "app.flowrecord",
+        userDataFolder,
+        CoreWebView2HostResourceAccessKind.Allow
+    );
+    webView.CoreWebView2.Navigate("https://app.flowrecord/index.html");
 #endif
         webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
     }
 
-    private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
-    {
+    private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e) {
         var message = e.TryGetWebMessageAsString();
-        if (message == "getRecords")
-        {
+        if (message == "getRecords") {
             var json = await _monitorService.GetRecordsJsonAsync();
             webView.CoreWebView2.PostWebMessageAsJson(json);
         }
     }
 
-    private void InitializeTrayIcon()
-    {
+    private void InitializeTrayIcon() {
         // リソースからアイコンのストリームを取得
         var iconUri = new Uri("pack://application:,,,/app.ico");
         var iconStreamInfo = System.Windows.Application.GetResourceStream(iconUri);
@@ -72,8 +65,7 @@ public partial class MainWindow : Window
         // ストリームからSystem.Drawing.Iconを作成
         var icon = new Icon(iconStreamInfo.Stream);
 
-        _notifyIcon = new NotifyIcon
-        {
+        _notifyIcon = new NotifyIcon {
             Icon = icon,
             Visible = true,
             Text = "FlowRecord Monitor"
@@ -86,34 +78,28 @@ public partial class MainWindow : Window
         _notifyIcon.DoubleClick += (s, e) => ShowWindow();
     }
 
-    private void ShowWindow()
-    {
+    private void ShowWindow() {
         Show();
         WindowState = WindowState.Normal;
         Activate();
     }
 
-    private void ExitApp()
-    {
+    private void ExitApp() {
         _isExiting = true;
         _monitorService.Stop();
         _notifyIcon?.Dispose();
         System.Windows.Application.Current.Shutdown();
     }
 
-    private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-    {
-        if (!_isExiting)
-        {
+    private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) {
+        if (!_isExiting) {
             e.Cancel = true;
             Hide();
         }
     }
 
-    private static void SetStartup()
-    {
-        try
-        {
+    private static void SetStartup() {
+        try {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
             if (key == null) return;
 #if DEBUG
@@ -121,16 +107,15 @@ public partial class MainWindow : Window
             // 開発用のパスが登録されていたら邪魔になるため、スタートアップから削除する
             key.DeleteValue("FlowRecord", false);
 #else
-            // 【本番時 (Release)】
-            // 実行中のファイルのフルパスを取得して登録する
-            var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
-            if (currentModule?.FileName != null)
-            {
-                key.SetValue("FlowRecord", currentModule.FileName);
-            }
-#endif
+        // 【本番時 (Release)】
+        // 実行中のファイルのフルパスを取得して登録する
+        var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
+        if (currentModule?.FileName != null)
+        {
+            key.SetValue("FlowRecord", currentModule.FileName);
         }
-        catch { /* 無視 */ }
+#endif
+        } catch { /* 無視 */ }
     }
 }
 
