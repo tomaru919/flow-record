@@ -7,8 +7,7 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="FlowRecord" Height="600" Width="800" Icon="app.ico"
-        Closing="Window_Closing"
-        Visibility="Hidden">
+        Closing="Window_Closing">
     <Grid>
         <wv2:WebView2 Name="webView"/>
     </Grid>
