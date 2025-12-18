@@ -3,19 +3,15 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32; // Registry用
 using FlowRecord.Monitor;
-using System.Windows.Forms;
-using System.Drawing;
 
 namespace FlowRecord;
 
 public partial class MainWindow : Window {
-    private NotifyIcon? _notifyIcon;
     private readonly MonitorService _monitorService;
-    private bool _isExiting = false;
+    public bool IsExiting { get; set; } = false;
 
     public MainWindow() {
         InitializeComponent();
-        InitializeTrayIcon();
         SetStartup();
 
         _monitorService = new MonitorService();
@@ -57,42 +53,8 @@ public partial class MainWindow : Window {
         }
     }
 
-    private void InitializeTrayIcon() {
-        // リソースからアイコンのストリームを取得
-        var iconUri = new Uri("pack://application:,,,/app.ico");
-        var iconStreamInfo = System.Windows.Application.GetResourceStream(iconUri);
-
-        // ストリームからSystem.Drawing.Iconを作成
-        var icon = new Icon(iconStreamInfo.Stream);
-
-        _notifyIcon = new NotifyIcon {
-            Icon = icon,
-            Visible = true,
-            Text = "FlowRecord Monitor"
-        };
-
-        var contextMenu = new ContextMenuStrip();
-        contextMenu.Items.Add("Open", null, (s, e) => ShowWindow());
-        contextMenu.Items.Add("Exit", null, (s, e) => ExitApp());
-        _notifyIcon.ContextMenuStrip = contextMenu;
-        _notifyIcon.DoubleClick += (s, e) => ShowWindow();
-    }
-
-    private void ShowWindow() {
-        Show();
-        WindowState = WindowState.Normal;
-        Activate();
-    }
-
-    private void ExitApp() {
-        _isExiting = true;
-        _monitorService.Stop();
-        _notifyIcon?.Dispose();
-        System.Windows.Application.Current.Shutdown();
-    }
-
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) {
-        if (!_isExiting) {
+        if (!IsExiting) {
             e.Cancel = true;
             Hide();
         }
