@@ -8,6 +8,9 @@ using Npgsql;
 
 namespace FlowRecord.Monitor;
 
+/// <summary>
+/// モニタリングサービス
+/// </summary>
 public class MonitorService {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
@@ -30,6 +33,24 @@ public class MonitorService {
                             $"Database={Environment.GetEnvironmentVariable("SUPABASE_DB")};" +
                             "SSL Mode=Require;Trust Server Certificate=true";
     }
+
+    // シャットダウンを記録するメソッド
+    // public void RecordShutdownLog() {
+    //     try {
+    //         using var conn = new NpgsqlConnection(connectionString);
+    //         conn.Open();
+    //         // shutdown_logs テーブルにPC名とシャットダウン時間を記録
+    //         const string query = "INSERT INTO shutdown_logs (pc_name, shutdown_time) VALUES (@pc_name, @shutdown_time)";
+
+    //         using var cmd = new NpgsqlCommand(query, conn);
+    //         cmd.Parameters.AddWithValue("pc_name", pcName);
+    //         cmd.Parameters.AddWithValue("shutdown_time", DateTime.Now);
+
+    //         cmd.ExecuteNonQuery();
+    //     } catch (Exception ex) {
+    //         Debug.WriteLine($"Shutdown Log Error: {ex.Message}");
+    //     }
+    // }
 
     public void Start() {
         _cts = new CancellationTokenSource();

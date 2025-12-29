@@ -8,13 +8,11 @@ namespace FlowRecord;
 /// <summary>
 /// Interaction logic for App.xaml
 /// </summary>
-public partial class App : System.Windows.Application
-{
+public partial class App : System.Windows.Application {
     private NotifyIcon? _notifyIcon;
     private MainWindow? _mainWindow;
 
-    protected override void OnStartup(StartupEventArgs e)
-    {
+    protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
 
         _mainWindow = new MainWindow();
@@ -22,13 +20,11 @@ public partial class App : System.Windows.Application
         var iconUri = new Uri("pack://application:,,,/app.ico");
         var iconStreamInfo = GetResourceStream(iconUri);
         Icon? icon = null;
-        if (iconStreamInfo != null)
-        {
+        if (iconStreamInfo != null) {
             icon = new Icon(iconStreamInfo.Stream);
         }
 
-        _notifyIcon = new NotifyIcon
-        {
+        _notifyIcon = new NotifyIcon {
             Icon = icon,
             Visible = true,
             Text = "FlowRecord"
@@ -41,24 +37,20 @@ public partial class App : System.Windows.Application
         _notifyIcon.DoubleClick += OnOpenClick;
     }
 
-    private void OnOpenClick(object? sender, EventArgs e)
-    {
-        if (_mainWindow != null)
-        {
+    private void OnOpenClick(object? sender, EventArgs e) {
+        if (_mainWindow != null) {
             _mainWindow.Show();
             _mainWindow.WindowState = WindowState.Normal;
             _mainWindow.Activate();
         }
     }
 
-    private void OnExitClick(object? sender, EventArgs e)
-    {
+    private void OnExitClick(object? sender, EventArgs e) {
         _mainWindow?.IsExiting = true;
         Shutdown();
     }
 
-    protected override void OnExit(ExitEventArgs e)
-    {
+    protected override void OnExit(ExitEventArgs e) {
         _notifyIcon?.Dispose();
         base.OnExit(e);
     }
