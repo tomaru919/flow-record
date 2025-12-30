@@ -1,0 +1,12 @@
+{
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/.vscode": true,
+        "**/bin": true,
+        "**/obj": true,
+        "**/dist": true,
+        "**/*.sln": true,
+        "**/*.gitignore": true,
+        "**/package-lock.json": true
+    }
+}
