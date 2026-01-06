@@ -27,18 +27,4 @@
     <Resource Include="app.ico" />
   </ItemGroup>
 
-<Target Name="BuildFrontend" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
-    <Message Importance="high" Text="Building React Frontend..." />
-    <Exec Command="npm install" WorkingDirectory="..\frontend" />
-    <Exec Command="npm run build" WorkingDirectory="..\frontend" />
-
-    <ItemGroup>
-      <Content Include="..\frontend\dist\**">
-        <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      </Content>
-    </ItemGroup>
-  </Target>
-
 </Project>
