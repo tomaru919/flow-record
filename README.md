@@ -9,4 +9,5 @@
 - [x] データベースをsupabaseに変更
 - [x] アプリを起動したときはウィンドウを表示せず、バックグラウンドで実行する。
   - [x] タスクトレイアイコンの"Open"をおしたときにだけ、起動する
-- [ ] データベースをpc_name, active_window, boot_shutdownに分ける
+- [x] データベースをpc_name, active_window, boot_shutdownに分ける
+- [ ] なぜシャットダウンしたときだけ、データベースに記録されるのか？

@@ -6,7 +6,6 @@ interface Record {
   event_type: string
   start_time: string
   end_time: string
-  duration: number | null
 }
 
 interface WebViewMessageEvent {
@@ -60,16 +59,14 @@ function App() {
               <th>Time</th>
               <th>Event</th>
               <th>Details</th>
-              <th>Duration (s)</th>
             </tr>
           </thead>
           <tbody>
-            {records.map((r, i) => (
-              <tr key={i}>
-                <td>{new Date(r.start_time).toLocaleTimeString()}</td>
-                <td>{r.event_type}</td>
-                <td>{r.window_title}</td>
-                <td>{r.duration}</td>
+            {records.map((record, index) => (
+              <tr key={index}>
+                <td>{new Date(record.start_time).toLocaleTimeString()}</td>
+                <td>{record.event_type}</td>
+                <td>{record.window_title}</td>
               </tr>
             ))}
           </tbody>

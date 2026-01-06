@@ -19,6 +19,7 @@ public partial class MainWindow : Window {
         _monitorService.Start();
 
         InitializeWebView();
+        SystemEvents.SessionEnding += OnSessionEnding;
     }
 
     private async void InitializeWebView() {
@@ -58,6 +59,18 @@ public partial class MainWindow : Window {
             e.Cancel = true;
             Hide();
         }
+    }
+
+    protected override async void OnClosed(EventArgs e) {
+        SystemEvents.SessionEnding -= OnSessionEnding;
+        await _monitorService.StopAsync();
+        base.OnClosed(e);
+    }
+
+    private void OnSessionEnding(object? sender, SessionEndingEventArgs e) {
+        IsExiting = true;
+        Task.Run(() => _monitorService.RecordShutdownAndStopAsync(DateTime.Now)).GetAwaiter().GetResult();
+        System.Windows.Application.Current.Dispatcher.Invoke(System.Windows.Application.Current.Shutdown);
     }
 
     private static void SetStartup() {
