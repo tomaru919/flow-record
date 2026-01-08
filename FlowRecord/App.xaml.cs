@@ -45,8 +45,18 @@ public partial class App : System.Windows.Application {
         }
     }
 
-    private void OnExitClick(object? sender, EventArgs e) {
-        _mainWindow?.IsExiting = true;
+    private async void OnExitClick(object? sender, EventArgs e) {
+        if (_mainWindow == null) {
+            Shutdown();
+            return;
+        }
+
+        _mainWindow.IsExiting = true;
+
+        try {
+            await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
+        } catch {}
+
         Shutdown();
     }
 

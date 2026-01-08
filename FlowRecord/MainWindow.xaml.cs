@@ -9,6 +9,7 @@ namespace FlowRecord;
 public partial class MainWindow : Window {
     private readonly MonitorService _monitorService;
     public bool IsExiting { get; set; } = false;
+    private bool _shutdownRecorded = false;
 
     public MainWindow() {
         InitializeComponent();
@@ -19,7 +20,6 @@ public partial class MainWindow : Window {
         _monitorService.Start();
 
         InitializeWebView();
-        SystemEvents.SessionEnding += OnSessionEnding;
     }
 
     private async void InitializeWebView() {
@@ -61,17 +61,17 @@ public partial class MainWindow : Window {
         }
     }
 
-    protected override async void OnClosed(EventArgs e) {
-        SystemEvents.SessionEnding -= OnSessionEnding;
-        await _monitorService.StopAsync();
-        base.OnClosed(e);
+    public async Task ShutdownAndSaveAsync(DateTime shutdownTime) {
+        if (_shutdownRecorded) return;
+        _shutdownRecorded = true;
+
+        await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
 
-    private void OnSessionEnding(object? sender, SessionEndingEventArgs e) {
-        IsExiting = true;
-        Task.Run(() => _monitorService.RecordShutdownAndStopAsync(DateTime.Now)).GetAwaiter().GetResult();
-        System.Windows.Application.Current.Dispatcher.Invoke(System.Windows.Application.Current.Shutdown);
-    }
+    // protected override async void OnClosed(EventArgs e) {
+    //     await _monitorService.RecordShutdownAndStopAsync(DateTime.Now);
+    //     base.OnClosed(e);
+    // }
 
     private static void SetStartup() {
         try {

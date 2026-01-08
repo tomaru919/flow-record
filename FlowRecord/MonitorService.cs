@@ -203,6 +203,8 @@ public class MonitorService {
             _ = await cmd.ExecuteNonQueryAsync();
 
             _shutdownRecorded = true;
+        } catch (Exception ex) {
+            Debug.WriteLine($"Shutdown record error: {ex}");
         } finally {
             _shutdownLock.Release();
         }
