@@ -2,6 +2,9 @@
 using System.Data;
 using System.Drawing;
 using System.Windows;
+using Microsoft.Win32;
+using System.Text.Json;
+using System.IO;
 
 namespace FlowRecord;
 
@@ -15,14 +18,18 @@ public partial class App : System.Windows.Application {
     protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
 
+        SystemEvents.SessionEnding += OnSessionEnding;
+
         _mainWindow = new MainWindow();
 
-        var iconUri = new Uri("pack://application:,,,/app.ico");
-        var iconStreamInfo = GetResourceStream(iconUri);
         Icon? icon = null;
-        if (iconStreamInfo != null) {
-            icon = new Icon(iconStreamInfo.Stream);
-        }
+        try {
+            var iconUri = new Uri("pack://application:,,,/app.ico");
+            var iconStreamInfo = GetResourceStream(iconUri);
+            if (iconStreamInfo != null) {
+                icon = new Icon(iconStreamInfo.Stream);
+            }
+        } catch { }
 
         _notifyIcon = new NotifyIcon {
             Icon = icon,
@@ -38,30 +45,67 @@ public partial class App : System.Windows.Application {
     }
 
     private void OnOpenClick(object? sender, EventArgs e) {
-        if (_mainWindow != null) {
-            _mainWindow.Show();
-            _mainWindow.WindowState = WindowState.Normal;
-            _mainWindow.Activate();
-        }
+        // if (_mainWindow != null) {
+        //     _mainWindow.Show();
+        //     _mainWindow.WindowState = WindowState.Normal;
+        //     _mainWindow.Activate();
+        // }
+
+        if (_mainWindow == null) return;
+
+        _mainWindow.Show();
+        _mainWindow.WindowState = WindowState.Normal;
+        _mainWindow.Activate();
     }
 
     private async void OnExitClick(object? sender, EventArgs e) {
-        if (_mainWindow == null) {
-            Shutdown();
-            return;
+        // if (_mainWindow == null) {
+        //     Shutdown();
+        //     return;
+        // }
+
+        // _mainWindow.IsExiting = true;
+
+        // try {
+        //     await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
+        // } catch { }
+
+        if (_mainWindow != null) {
+            _mainWindow.IsExiting = true;
+
+            // Exitボタンは時間があるので、ここではDBへ確実に記録する
+            try {
+                await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
+            } catch { }
         }
-
-        _mainWindow.IsExiting = true;
-
-        try {
-            await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
-        } catch {}
 
         Shutdown();
     }
 
     protected override void OnExit(ExitEventArgs e) {
-        _notifyIcon?.Dispose();
+        // _notifyIcon?.Dispose();
+
+        try {
+            if (_notifyIcon != null) {
+                _notifyIcon.Visible = false;
+                _notifyIcon.DoubleClick -= OnOpenClick;
+                _notifyIcon.ContextMenuStrip?.Dispose();
+                _notifyIcon.Dispose();
+                _notifyIcon = null;
+            }
+        } catch { }
+
+        SystemEvents.SessionEnding -= OnSessionEnding;
         base.OnExit(e);
+    }
+
+    private async void OnSessionEnding(object sender, SessionEndingEventArgs e) {
+        if (_mainWindow == null) return;
+
+        _mainWindow.IsExiting = true;
+
+        try {
+            await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
+        } catch { }
     }
 }

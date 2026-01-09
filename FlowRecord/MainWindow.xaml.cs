@@ -68,11 +68,6 @@ public partial class MainWindow : Window {
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
 
-    // protected override async void OnClosed(EventArgs e) {
-    //     await _monitorService.RecordShutdownAndStopAsync(DateTime.Now);
-    //     base.OnClosed(e);
-    // }
-
     private static void SetStartup() {
         try {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);

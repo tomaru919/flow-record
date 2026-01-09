@@ -15,3 +15,32 @@
 - [ ] アクティブウインドウに"システム トレイ オーバーフロー ウィンドウ"が記録されてしまう。
 - [ ] パソコンを起動したときとシャットダウンしたときだけboot_shutdownテーブルに記録するようにする
 - [ ] シャットダウンしたときにはテーブルに記録されない
+
+## ビルド方法
+
+### バックエンドのビルド
+```bash
+cd FlowRecord/
+dotnet publish -c Release -r win-x64 --self-contained true
+```
+
+### フロントエンドのビルド
+```bash
+cd frontend/
+npm run build
+```
+
+```mermaid
+graph TD;
+    A-->B;
+    A-->C;
+    B-->D;
+    C-->D;
+```
+
+```json
+{
+  "id": 1,
+  "shutdown_time": "2026-01-08 15:18..."
+}
+```
