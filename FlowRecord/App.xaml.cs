@@ -1,10 +1,9 @@
 ﻿using System.Configuration;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows;
 using Microsoft.Win32;
-using System.Text.Json;
-using System.IO;
 
 namespace FlowRecord;
 
@@ -18,9 +17,13 @@ public partial class App : System.Windows.Application {
     protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
 
+        Debug.WriteLine("=== OnStartup 開始 ===");
+
+        // PCシャットダウン/ログオフ通知
         SystemEvents.SessionEnding += OnSessionEnding;
 
         _mainWindow = new MainWindow();
+        Debug.WriteLine("MainWindow 作成完了");
 
         Icon? icon = null;
         try {
@@ -29,7 +32,9 @@ public partial class App : System.Windows.Application {
             if (iconStreamInfo != null) {
                 icon = new Icon(iconStreamInfo.Stream);
             }
-        } catch { }
+        } catch {
+            Debug.WriteLine("アイコンの設定に失敗");
+        }
 
         _notifyIcon = new NotifyIcon {
             Icon = icon,
@@ -45,12 +50,6 @@ public partial class App : System.Windows.Application {
     }
 
     private void OnOpenClick(object? sender, EventArgs e) {
-        // if (_mainWindow != null) {
-        //     _mainWindow.Show();
-        //     _mainWindow.WindowState = WindowState.Normal;
-        //     _mainWindow.Activate();
-        // }
-
         if (_mainWindow == null) return;
 
         _mainWindow.Show();
@@ -58,22 +57,11 @@ public partial class App : System.Windows.Application {
         _mainWindow.Activate();
     }
 
+    // Exitボタンは時間があるので、従来どおりDBへ確実に書く
     private async void OnExitClick(object? sender, EventArgs e) {
-        // if (_mainWindow == null) {
-        //     Shutdown();
-        //     return;
-        // }
-
-        // _mainWindow.IsExiting = true;
-
-        // try {
-        //     await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
-        // } catch { }
-
         if (_mainWindow != null) {
             _mainWindow.IsExiting = true;
 
-            // Exitボタンは時間があるので、ここではDBへ確実に記録する
             try {
                 await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
             } catch { }
@@ -83,8 +71,6 @@ public partial class App : System.Windows.Application {
     }
 
     protected override void OnExit(ExitEventArgs e) {
-        // _notifyIcon?.Dispose();
-
         try {
             if (_notifyIcon != null) {
                 _notifyIcon.Visible = false;
@@ -99,13 +85,15 @@ public partial class App : System.Windows.Application {
         base.OnExit(e);
     }
 
-    private async void OnSessionEnding(object sender, SessionEndingEventArgs e) {
+    // ★ここが重要：PCシャットダウン中はDBを触らない
+    // 代わりにローカルファイルへ { id, shutdown_time } を保存するだけ
+    private void OnSessionEnding(object sender, SessionEndingEventArgs e) {
         if (_mainWindow == null) return;
 
         _mainWindow.IsExiting = true;
 
         try {
-            await _mainWindow.ShutdownAndSaveAsync(DateTime.Now);
+            _mainWindow.SaveShutdownPendingFile(DateTime.Now);
         } catch { }
     }
 }

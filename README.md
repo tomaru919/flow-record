@@ -11,10 +11,13 @@
   - [x] タスクトレイアイコンの"Open"をおしたときにだけ、起動する
 - [x] データベースをpc_name, active_window, boot_shutdownに分ける
 - [x] アプリを閉じてもboot_shutdownテーブルのshutdown_timeに記録されない
-- [ ] スタートアップアプリが起動するときもアクティブウインドウに記録されてしまう
+- [ ] <span style="color: red; ">スタートアップアプリが起動するときもアクティブウインドウに記録されてしまう</span>
 - [ ] アクティブウインドウに"システム トレイ オーバーフロー ウィンドウ"が記録されてしまう。
 - [ ] パソコンを起動したときとシャットダウンしたときだけboot_shutdownテーブルに記録するようにする
-- [ ] シャットダウンしたときにはテーブルに記録されない
+- [ ] シャットダウンしたときにテーブルに記録されない
+- [x] アプリを起動してもコンテンツメニューにアイコンが表示されない。
+- [ ] "pending_shutdown.json"が生成されない
+- [ ] 開発環境とリリース環境で"pending_shutdown.json"の位置を変える
 
 ## ビルド方法
 
@@ -28,19 +31,4 @@ dotnet publish -c Release -r win-x64 --self-contained true
 ```bash
 cd frontend/
 npm run build
-```
-
-```mermaid
-graph TD;
-    A-->B;
-    A-->C;
-    B-->D;
-    C-->D;
-```
-
-```json
-{
-  "id": 1,
-  "shutdown_time": "2026-01-08 15:18..."
-}
 ```

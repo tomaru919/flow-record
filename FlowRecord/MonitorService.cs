@@ -2,14 +2,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using DotNetEnv;
 using Npgsql;
+using System.Collections.Generic;
 
 namespace FlowRecord.Monitor;
 
-/// <summary>
-/// モニタリングサービス
-/// </summary>
 public class MonitorService {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
@@ -21,10 +20,23 @@ public class MonitorService {
     private readonly string pcName = Environment.MachineName;
     private CancellationTokenSource? _cts;
     private int? _pcNameId;
-    private long? _bootShutdownId;
+    private long? _bootShutdownId; // ← Current_startup_id（起動行のID）
     private long? _currentWindowRecordId;
     private bool _shutdownRecorded;
-    private readonly SemaphoreSlim _shutdownLock = new(1, 1);
+    private readonly SemaphoreSlim _shutdownLock = new(1, 1); // なぜRecordShutdownAsync関数のときだけロックするのか？
+
+    // pendingファイル（OSシャットダウン時にここへ保存）
+    private static string PendingPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FlowRecord",
+            "pending_shutdown.json"
+        );
+
+    private sealed class PendingShutdownDto {
+        public long id { get; set; }
+        public DateTime shutdown_time { get; set; }
+    }
 
     public void Initialize() {
         var envPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".env"));
@@ -47,22 +59,40 @@ public class MonitorService {
 #endif
     }
 
+    // ★起動時の処理をここでまとめて実行する
     public void Start() {
         _cts = new CancellationTokenSource();
-        Task.Run(() => MonitoringLoop(_cts.Token));
+
+        Task.Run(async () => {
+            // 1) 起動時間をDBに保存してIDを確保（Current_startup_id）
+            // 2) pendingファイルを読んで、前回の shutdown_time を UPDATE
+            // 3) 監視ループ開始
+            try {
+                var pcNameId = await EnsurePcNameIdAsync().ConfigureAwait(false);
+                if (!pcNameId.HasValue) return;
+                Debug.WriteLine("pcのIDを取得する");
+
+                _bootShutdownId = await CreateBootRecordAsync(DateTime.Now).ConfigureAwait(false);
+
+                await ApplyPendingShutdownFileAsync().ConfigureAwait(false);
+
+                await MonitoringLoop(_cts.Token).ConfigureAwait(false);
+            } catch (Exception ex) {
+                // ここで落ちても監視ループは開始しない（DB前提アプリなので）
+                Debug.WriteLine($"MonitorService.Start error: {ex}");
+            }
+        });
+
+        // Task.Run(() => MonitoringLoop(_cts.Token));
     }
 
+    // この関数必要？
     public async Task StopAsync() {
         _cts?.Cancel();
-        // 終了時に最後のウィンドウを記録
         await FlushCurrentWindowAsync(DateTime.Now);
     }
 
     private async Task MonitoringLoop(CancellationToken token) {
-        var pcNameId = await EnsurePcNameIdAsync();
-        if (!pcNameId.HasValue) return;
-        _bootShutdownId = await CreateBootRecordAsync(DateTime.Now);
-
         while (!token.IsCancellationRequested) {
             try {
                 string activeWindow = GetActiveWindowTitle();
@@ -90,10 +120,78 @@ public class MonitorService {
         return "";
     }
 
+    // Exitボタン用：DBへ shutdown_time を書く
     public async Task RecordShutdownAndStopAsync(DateTime shutdownTime) {
         _cts?.Cancel();
         await FlushCurrentWindowAsync(shutdownTime);
         await RecordShutdownAsync(shutdownTime);
+    }
+
+    // OSシャットダウン用：{ id, shutdown_time } をローカルに保存
+    public void SaveShutdownPendingFile(DateTime shutdownTime) {
+        if (!_bootShutdownId.HasValue) return; // 起動IDが無いなら保存できない
+
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(PendingPath)!);
+
+            var dto = new PendingShutdownDto {
+                id = _bootShutdownId.Value,
+                shutdown_time = shutdownTime
+            };
+
+            var json = JsonSerializer.Serialize(dto);
+
+            // できるだけ確実にディスクに書く
+            using var fs = new FileStream(PendingPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var sw = new StreamWriter(fs, Encoding.UTF8);
+            sw.Write(json);
+            sw.Flush();
+            fs.Flush(true);
+        } catch {
+            // OS終了中は失敗しても仕方ないので無視
+        }
+    }
+
+    // 起動時：ファイルがあれば読み込み → id の行を UPDATE → 成功したらファイル削除
+    private async Task ApplyPendingShutdownFileAsync() {
+        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        if (!File.Exists(PendingPath)) return;
+
+        PendingShutdownDto? dto;
+        try {
+            var json = await File.ReadAllTextAsync(PendingPath, Encoding.UTF8);
+            dto = JsonSerializer.Deserialize<PendingShutdownDto>(json);
+            if (dto == null) return;
+        } catch { return; }
+
+        try {
+            var pcNameId = await EnsurePcNameIdAsync();
+            if (!pcNameId.HasValue) return;
+
+            await using var conn = new NpgsqlConnection(connectionString);
+            await conn.OpenAsync();
+
+            const string query = @"
+UPDATE boot_shutdown
+SET shutdown_time = @shutdown_time
+WHERE id = @id
+  AND pc_name_id = @pc_name_id
+  AND shutdown_time IS NULL;";
+
+            await using var cmd = new NpgsqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("shutdown_time", dto.shutdown_time);
+            cmd.Parameters.AddWithValue("id", dto.id);
+            cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+
+            var affected = await cmd.ExecuteNonQueryAsync();
+
+            // 更新できた時だけ削除（失敗したら次回また試す）
+            if (affected > 0) {
+                File.Delete(PendingPath);
+            }
+        } catch {
+            // DBが使えないときは次回に回す（ファイルは残す）
+        }
     }
 
     private async Task FlushCurrentWindowAsync(DateTime endTime) {
@@ -131,10 +229,10 @@ public class MonitorService {
         }
 
         const string insertQuery = @"
-            INSERT INTO pc_name (pc_name)
-            VALUES (@pc_name)
-            ON CONFLICT (pc_name) DO UPDATE SET pc_name = EXCLUDED.pc_name
-            RETURNING id";
+INSERT INTO pc_name (pc_name)
+VALUES (@pc_name)
+ON CONFLICT (pc_name) DO UPDATE SET pc_name = EXCLUDED.pc_name
+RETURNING id";
         await using var insertCmd = new NpgsqlCommand(insertQuery, conn);
         insertCmd.Parameters.AddWithValue("pc_name", pcName);
         var inserted = await insertCmd.ExecuteScalarAsync();
@@ -152,9 +250,9 @@ public class MonitorService {
         await conn.OpenAsync();
 
         const string query = @"
-            INSERT INTO boot_shutdown (pc_name_id, boot_time)
-            VALUES (@pc_name_id, @boot_time)
-            RETURNING id";
+INSERT INTO boot_shutdown (pc_name_id, boot_time)
+VALUES (@pc_name_id, @boot_time)
+RETURNING id";
         await using var cmd = new NpgsqlCommand(query, conn);
         cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
         cmd.Parameters.AddWithValue("boot_time", bootTime);
@@ -168,11 +266,11 @@ public class MonitorService {
         await conn.OpenAsync();
 
         const string query = @"
-            SELECT id
-            FROM boot_shutdown
-            WHERE pc_name_id = @pc_name_id
-            ORDER BY boot_time DESC
-            LIMIT 1";
+SELECT id
+FROM boot_shutdown
+WHERE pc_name_id = @pc_name_id
+ORDER BY boot_time DESC
+LIMIT 1";
         await using var cmd = new NpgsqlCommand(query, conn);
         cmd.Parameters.AddWithValue("pc_name_id", pcNameId);
         var result = await cmd.ExecuteScalarAsync();
@@ -194,9 +292,9 @@ public class MonitorService {
             await conn.OpenAsync();
 
             const string query = @"
-                UPDATE boot_shutdown
-                SET shutdown_time = @shutdown_time
-                WHERE id = @id AND shutdown_time IS NULL";
+UPDATE boot_shutdown
+SET shutdown_time = @shutdown_time
+WHERE id = @id AND shutdown_time IS NULL";
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("shutdown_time", shutdownTime);
             cmd.Parameters.AddWithValue("id", _bootShutdownId.Value);
@@ -210,20 +308,15 @@ public class MonitorService {
         }
     }
 
-    // DB保存メソッド
-    private async Task SaveActiveWindowRecordAsync(
-        string windowTitle,
-        DateTime startTime,
-        DateTime endTime
-    ) {
+    private async Task SaveActiveWindowRecordAsync(string windowTitle, DateTime startTime, DateTime endTime) {
         try {
             var pcNameId = await EnsurePcNameIdAsync();
             if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-                INSERT INTO active_window (pc_name_id, window_title, start_time, end_time)
-                VALUES (@pc_name_id, @window_title, @start_time, @end_time)";
+INSERT INTO active_window (pc_name_id, window_title, start_time, end_time)
+VALUES (@pc_name_id, @window_title, @start_time, @end_time)";
 
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
@@ -241,9 +334,9 @@ public class MonitorService {
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-                INSERT INTO active_window (pc_name_id, window_title, start_time, end_time)
-                VALUES (@pc_name_id, @window_title, @start_time, NULL)
-                RETURNING id";
+INSERT INTO active_window (pc_name_id, window_title, start_time, end_time)
+VALUES (@pc_name_id, @window_title, @start_time, NULL)
+RETURNING id";
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
             cmd.Parameters.AddWithValue("window_title", windowTitle ?? "");
@@ -262,9 +355,9 @@ public class MonitorService {
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-                UPDATE active_window
-                SET end_time = @end_time
-                WHERE id = @id AND end_time IS NULL";
+UPDATE active_window
+SET end_time = @end_time
+WHERE id = @id AND end_time IS NULL";
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("end_time", endTime);
             cmd.Parameters.AddWithValue("id", recordId);
@@ -274,39 +367,38 @@ public class MonitorService {
         }
     }
 
-    // フロントエンド用データ取得メソッド
     public async Task<string> GetRecordsJsonAsync() {
         try {
             if (string.IsNullOrWhiteSpace(connectionString)) return "[]";
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-                SELECT
-                    'active_window' AS event_type,
-                    aw.window_title,
-                    aw.start_time,
-                    aw.end_time
-                FROM active_window aw
-                WHERE aw.pc_name_id = @pc_name_id
-                UNION ALL
-                SELECT
-                    'startup' AS event_type,
-                    'system' AS window_title,
-                    bs.boot_time AS start_time,
-                    NULL::timestamp AS end_time
-                FROM boot_shutdown bs
-                WHERE bs.pc_name_id = @pc_name_id
-                UNION ALL
-                SELECT
-                    'shutdown' AS event_type,
-                    'system' AS window_title,
-                    bs.shutdown_time AS start_time,
-                    NULL::timestamp AS end_time
-                FROM boot_shutdown bs
-                WHERE bs.pc_name_id = @pc_name_id
-                    AND bs.shutdown_time IS NOT NULL
-                ORDER BY start_time DESC
-                LIMIT 100";
+SELECT
+    'active_window' AS event_type,
+    aw.window_title,
+    aw.start_time,
+    aw.end_time
+FROM active_window aw
+WHERE aw.pc_name_id = @pc_name_id
+UNION ALL
+SELECT
+    'startup' AS event_type,
+    'system' AS window_title,
+    bs.boot_time AS start_time,
+    NULL::timestamp AS end_time
+FROM boot_shutdown bs
+WHERE bs.pc_name_id = @pc_name_id
+UNION ALL
+SELECT
+    'shutdown' AS event_type,
+    'system' AS window_title,
+    bs.shutdown_time AS start_time,
+    NULL::timestamp AS end_time
+FROM boot_shutdown bs
+WHERE bs.pc_name_id = @pc_name_id
+  AND bs.shutdown_time IS NOT NULL
+ORDER BY start_time DESC
+LIMIT 100";
             var pcNameId = await EnsurePcNameIdAsync();
             if (!pcNameId.HasValue) return "[]";
             var cmd = new NpgsqlCommand(query, conn);
@@ -314,14 +406,12 @@ public class MonitorService {
             var reader = await cmd.ExecuteReaderAsync();
             var results = new List<object>();
             while (await reader.ReadAsync()) {
-                results.Add(
-                    new {
-                        window_title = reader["window_title"].ToString(),
-                        event_type = reader["event_type"].ToString(),
-                        start_time = reader["start_time"].ToString(),
-                        end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString()
-                    }
-                );
+                results.Add(new {
+                    window_title = reader["window_title"].ToString(),
+                    event_type = reader["event_type"].ToString(),
+                    start_time = reader["start_time"].ToString(),
+                    end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString()
+                });
             }
             return System.Text.Json.JsonSerializer.Serialize(results);
         } catch { return "[]"; }

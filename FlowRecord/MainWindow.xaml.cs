@@ -8,7 +8,11 @@ namespace FlowRecord;
 
 public partial class MainWindow : Window {
     private readonly MonitorService _monitorService;
+
     public bool IsExiting { get; set; } = false;
+
+    // なぜDBに保存されたことを確認しないといけないのか？
+    // ShutdownAndSaveAsync関数が2回呼ばれることはあるのか？
     private bool _shutdownRecorded = false;
 
     public MainWindow() {
@@ -17,31 +21,27 @@ public partial class MainWindow : Window {
 
         _monitorService = new MonitorService();
         _monitorService.Initialize();
+
+        // ★起動時の処理（boot INSERT → id確保 → pendingファイル読んで UPDATE → 監視開始）
         _monitorService.Start();
 
         InitializeWebView();
     }
 
     private async void InitializeWebView() {
-        // WebView2の環境を初期化
         await webView.EnsureCoreWebView2Async();
 
-        // ビルド済みフロントエンドファイルのパス（実行ファイル直下の wwwroot フォルダを想定）
         var userDataFolder = Path.Combine(AppContext.BaseDirectory, "wwwroot");
 
 #if DEBUG
-        // 【開発時】ViteサーバーのURL
         webView.CoreWebView2.Navigate("http://localhost:5173");
 #else
-    // 【本番時】ローカルファイルを仮想ドメインとしてマッピング
-    // これにより "https://app.flowrecord/index.html" でローカルファイルにアクセスできます
-    // (CORSエラーなどを防ぐための推奨設定です)
-    webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
-        "app.flowrecord",
-        userDataFolder,
-        CoreWebView2HostResourceAccessKind.Allow
-    );
-    webView.CoreWebView2.Navigate("https://app.flowrecord/index.html");
+        webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+            "app.flowrecord",
+            userDataFolder,
+            CoreWebView2HostResourceAccessKind.Allow
+        );
+        webView.CoreWebView2.Navigate("https://app.flowrecord/index.html");
 #endif
         webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
     }
@@ -54,6 +54,7 @@ public partial class MainWindow : Window {
         }
     }
 
+    // ×ボタンで終了させず、トレイ常駐（Hide）にする
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e) {
         if (!IsExiting) {
             e.Cancel = true;
@@ -61,6 +62,7 @@ public partial class MainWindow : Window {
         }
     }
 
+    // Exitボタン用：DBへ shutdown_time を確実に書く
     public async Task ShutdownAndSaveAsync(DateTime shutdownTime) {
         if (_shutdownRecorded) return;
         _shutdownRecorded = true;
@@ -68,23 +70,23 @@ public partial class MainWindow : Window {
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
 
+    // OSシャットダウン用：DBへ書かず、pendingファイルに保存
+    public void SaveShutdownPendingFile(DateTime shutdownTime) {
+        _monitorService.SaveShutdownPendingFile(shutdownTime);
+    }
+
     private static void SetStartup() {
         try {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
             if (key == null) return;
 #if DEBUG
-            // 【開発時 (Debug)
-            // 開発用のパスが登録されていたら邪魔になるため、スタートアップから削除する
             key.DeleteValue("FlowRecord", false);
 #else
-        // 【本番時 (Release)】
-        // 実行中のファイルのフルパスを取得して登録する
-        var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
-        if (currentModule?.FileName != null)
-        {
-            key.SetValue("FlowRecord", currentModule.FileName);
-        }
+            var currentModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
+            if (currentModule?.FileName != null) {
+                key.SetValue("FlowRecord", currentModule.FileName);
+            }
 #endif
-        } catch { /* 無視 */ }
+        } catch { }
     }
 }
