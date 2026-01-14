@@ -73,8 +73,15 @@ public class MonitorService {
                 Debug.WriteLine("pcのIDを取得する");
 
                 _bootShutdownId = await CreateBootRecordAsync(DateTime.Now).ConfigureAwait(false);
+                Debug.WriteLine($"boot shutdown id: {_bootShutdownId}");
 
                 await ApplyPendingShutdownFileAsync().ConfigureAwait(false);
+
+                // if (!File.Exists(PendingPath)) Debug.WriteLine("ファイルが存在しません。");
+
+                // var json = JsonSerializer.Serialize(dto);
+                // Debug.WriteLine(json);
+                // File.WriteAllText(PendingPath, json);
 
                 await MonitoringLoop(_cts.Token).ConfigureAwait(false);
             } catch (Exception ex) {
@@ -155,14 +162,23 @@ public class MonitorService {
     // 起動時：ファイルがあれば読み込み → id の行を UPDATE → 成功したらファイル削除
     private async Task ApplyPendingShutdownFileAsync() {
         if (string.IsNullOrWhiteSpace(connectionString)) return;
-        if (!File.Exists(PendingPath)) return;
+        if (!File.Exists(PendingPath)) {
+            // Debug.WriteLine("ファイルが存在しない");
+            Directory.CreateDirectory(Path.GetDirectoryName(PendingPath)!);
+            return;
+        }
+
+        Debug.WriteLine("jsonファイルを確認");
 
         PendingShutdownDto? dto;
         try {
             var json = await File.ReadAllTextAsync(PendingPath, Encoding.UTF8);
             dto = JsonSerializer.Deserialize<PendingShutdownDto>(json);
             if (dto == null) return;
-        } catch { return; }
+        } catch {
+            Debug.WriteLine("jsonファイルを読み込み中にエラー");
+            return;
+        }
 
         try {
             var pcNameId = await EnsurePcNameIdAsync();
@@ -413,7 +429,7 @@ LIMIT 100";
                     end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString()
                 });
             }
-            return System.Text.Json.JsonSerializer.Serialize(results);
+            return JsonSerializer.Serialize(results);
         } catch { return "[]"; }
     }
 }
