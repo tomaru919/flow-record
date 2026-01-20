@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows;
 using Microsoft.Win32;
+using System.IO;
 
 namespace FlowRecord;
 
@@ -11,6 +12,36 @@ namespace FlowRecord;
 /// Interaction logic for App.xaml
 /// </summary>
 public partial class App : System.Windows.Application {
+    // テスト
+    private static string LogPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FlowRecord",
+            "shutdown.log"
+        );
+
+    private static void AppendLine(string line) {
+        try {
+            var dir = Path.GetDirectoryName(LogPath)!;
+            Directory.CreateDirectory(dir); // ★フォルダが無いと失敗する
+
+            using var fs = new FileStream(
+                LogPath,
+                FileMode.Append,
+                FileAccess.Write,
+                FileShare.Read,
+                bufferSize: 4096,
+                options: FileOptions.WriteThrough
+            );
+            using var sw = new StreamWriter(fs);
+            sw.WriteLine(line);
+            sw.Flush();
+            fs.Flush(true);
+        } catch {
+            // まずは握りつぶしてOK。必要なら Debug.WriteLine で出す
+        }
+    }
+
     private NotifyIcon? _notifyIcon;
     private MainWindow? _mainWindow;
 
@@ -20,7 +51,7 @@ public partial class App : System.Windows.Application {
         Debug.WriteLine("=== OnStartup 開始 ===");
 
         // PCシャットダウン/ログオフ通知
-        SystemEvents.SessionEnding += OnSessionEnding;
+        SessionEnding += OnSessionEnding;
 
         _mainWindow = new MainWindow();
         Debug.WriteLine("MainWindow 作成完了");
@@ -81,19 +112,22 @@ public partial class App : System.Windows.Application {
             }
         } catch { }
 
-        SystemEvents.SessionEnding -= OnSessionEnding;
+        SessionEnding -= OnSessionEnding;
         base.OnExit(e);
     }
 
     // ★ここが重要：PCシャットダウン中はDBを触らない
     // 代わりにローカルファイルへ { id, shutdown_time } を保存するだけ
-    private void OnSessionEnding(object sender, SessionEndingEventArgs e) {
+    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e) {
+        // テスト
+        AppendLine($"{DateTime.Now}");
+
         if (_mainWindow == null) return;
 
-        _mainWindow.IsExiting = true;
+        // try {
+        //     _mainWindow.SaveShutdownPendingFile(DateTime.Now);
+        // } catch { }
 
-        try {
-            _mainWindow.SaveShutdownPendingFile(DateTime.Now);
-        } catch { }
+        _mainWindow.IsExiting = true;
     }
 }

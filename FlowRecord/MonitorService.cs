@@ -70,18 +70,10 @@ public class MonitorService {
             try {
                 var pcNameId = await EnsurePcNameIdAsync().ConfigureAwait(false);
                 if (!pcNameId.HasValue) return;
-                Debug.WriteLine("pcのIDを取得する");
 
                 _bootShutdownId = await CreateBootRecordAsync(DateTime.Now).ConfigureAwait(false);
-                Debug.WriteLine($"boot shutdown id: {_bootShutdownId}");
 
                 await ApplyPendingShutdownFileAsync().ConfigureAwait(false);
-
-                // if (!File.Exists(PendingPath)) Debug.WriteLine("ファイルが存在しません。");
-
-                // var json = JsonSerializer.Serialize(dto);
-                // Debug.WriteLine(json);
-                // File.WriteAllText(PendingPath, json);
 
                 await MonitoringLoop(_cts.Token).ConfigureAwait(false);
             } catch (Exception ex) {
@@ -163,8 +155,7 @@ public class MonitorService {
     private async Task ApplyPendingShutdownFileAsync() {
         if (string.IsNullOrWhiteSpace(connectionString)) return;
         if (!File.Exists(PendingPath)) {
-            // Debug.WriteLine("ファイルが存在しない");
-            Directory.CreateDirectory(Path.GetDirectoryName(PendingPath)!);
+            Debug.WriteLine("ファイルが存在しない");
             return;
         }
 
