@@ -70,11 +70,6 @@ public partial class MainWindow : Window {
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
 
-    // OSシャットダウン用：DBへ書かず、pendingファイルに保存
-    public void SaveShutdownPendingFile(DateTime shutdownTime) {
-        _monitorService.SaveShutdownPendingFile(shutdownTime);
-    }
-
     private static void SetStartup() {
         try {
             using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);

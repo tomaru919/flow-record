@@ -26,17 +26,12 @@ public class MonitorService {
     private readonly SemaphoreSlim _shutdownLock = new(1, 1); // なぜRecordShutdownAsync関数のときだけロックするのか？
 
     // pendingファイル（OSシャットダウン時にここへ保存）
-    private static string PendingPath =>
+    private static string LogPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "FlowRecord",
-            "pending_shutdown.json"
+            "shutdown.txt"
         );
-
-    private sealed class PendingShutdownDto {
-        public long id { get; set; }
-        public DateTime shutdown_time { get; set; }
-    }
 
     public void Initialize() {
         var envPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".env"));
@@ -71,9 +66,9 @@ public class MonitorService {
                 var pcNameId = await EnsurePcNameIdAsync().ConfigureAwait(false);
                 if (!pcNameId.HasValue) return;
 
-                _bootShutdownId = await CreateBootRecordAsync(DateTime.Now).ConfigureAwait(false);
+                await ApplyShutdownLogToLastBootRecordAsync().ConfigureAwait(false);
 
-                await ApplyPendingShutdownFileAsync().ConfigureAwait(false);
+                _bootShutdownId = await CreateBootRecordAsync(DateTime.Now).ConfigureAwait(false);
 
                 await MonitoringLoop(_cts.Token).ConfigureAwait(false);
             } catch (Exception ex) {
@@ -81,14 +76,6 @@ public class MonitorService {
                 Debug.WriteLine($"MonitorService.Start error: {ex}");
             }
         });
-
-        // Task.Run(() => MonitoringLoop(_cts.Token));
-    }
-
-    // この関数必要？
-    public async Task StopAsync() {
-        _cts?.Cancel();
-        await FlushCurrentWindowAsync(DateTime.Now);
     }
 
     private async Task MonitoringLoop(CancellationToken token) {
@@ -126,78 +113,59 @@ public class MonitorService {
         await RecordShutdownAsync(shutdownTime);
     }
 
-    // OSシャットダウン用：{ id, shutdown_time } をローカルに保存
-    public void SaveShutdownPendingFile(DateTime shutdownTime) {
-        if (!_bootShutdownId.HasValue) return; // 起動IDが無いなら保存できない
-
+    private async Task ApplyShutdownLogToLastBootRecordAsync() {
+        DateTime? shutdownTime;
         try {
-            Directory.CreateDirectory(Path.GetDirectoryName(PendingPath)!);
-
-            var dto = new PendingShutdownDto {
-                id = _bootShutdownId.Value,
-                shutdown_time = shutdownTime
-            };
-
-            var json = JsonSerializer.Serialize(dto);
-
-            // できるだけ確実にディスクに書く
-            using var fs = new FileStream(PendingPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            using var sw = new StreamWriter(fs, Encoding.UTF8);
-            sw.Write(json);
-            sw.Flush();
-            fs.Flush(true);
-        } catch {
-            // OS終了中は失敗しても仕方ないので無視
-        }
-    }
-
-    // 起動時：ファイルがあれば読み込み → id の行を UPDATE → 成功したらファイル削除
-    private async Task ApplyPendingShutdownFileAsync() {
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
-        if (!File.Exists(PendingPath)) {
-            Debug.WriteLine("ファイルが存在しない");
+            var readText = File.ReadAllLines(LogPath).Last();
+            if (string.IsNullOrWhiteSpace(readText)) return;
+            shutdownTime = DateTime.Parse(readText);
+        } catch (Exception ex) {
+            Debug.WriteLine($"ApplyShutdownLogToLastBootRecordAsync read error: {ex}");
             return;
         }
 
-        Debug.WriteLine("jsonファイルを確認");
-
-        PendingShutdownDto? dto;
-        try {
-            var json = await File.ReadAllTextAsync(PendingPath, Encoding.UTF8);
-            dto = JsonSerializer.Deserialize<PendingShutdownDto>(json);
-            if (dto == null) return;
-        } catch {
-            Debug.WriteLine("jsonファイルを読み込み中にエラー");
-            return;
-        }
+        var pcNameId = await EnsurePcNameIdAsync();
+        if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
 
         try {
-            var pcNameId = await EnsurePcNameIdAsync();
-            if (!pcNameId.HasValue) return;
-
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
 
-            const string query = @"
+            const string selectId = @"
+SELECT id
+FROM boot_shutdown
+WHERE pc_name_id = @pc_name_id
+ORDER BY boot_time DESC
+LIMIT 1";
+
+            long? lastId = null;
+            await using (var cmd = new NpgsqlCommand(selectId, conn)) {
+                cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+                var result = await cmd.ExecuteScalarAsync();
+                if (result != null && result != DBNull.Value) lastId = Convert.ToInt64(result);
+            }
+            if (!lastId.HasValue) return;
+
+            const string update = @"
 UPDATE boot_shutdown
 SET shutdown_time = @shutdown_time
-WHERE id = @id
-  AND pc_name_id = @pc_name_id
-  AND shutdown_time IS NULL;";
+WHERE id = @id AND pc_name_id = @pc_name_id;";
 
-            await using var cmd = new NpgsqlCommand(query, conn);
-            cmd.Parameters.AddWithValue("shutdown_time", dto.shutdown_time);
-            cmd.Parameters.AddWithValue("id", dto.id);
-            cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+            await using (var cmd = new NpgsqlCommand(update, conn)) {
+                cmd.Parameters.AddWithValue("shutdown_time", shutdownTime);
+                cmd.Parameters.AddWithValue("id", lastId.Value);
+                cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
 
-            var affected = await cmd.ExecuteNonQueryAsync();
+                var affected = await cmd.ExecuteNonQueryAsync();
 
-            // 更新できた時だけ削除（失敗したら次回また試す）
-            if (affected > 0) {
-                File.Delete(PendingPath);
+                Debug.WriteLine(affected);
+                // 成功したらログを消す（次回また同じ shutdown_time を上書きしないため）
+                if (affected > 0) {
+                    try { File.Delete(LogPath); } catch { }
+                }
             }
-        } catch {
-            // DBが使えないときは次回に回す（ファイルは残す）
+        } catch (Exception ex) {
+            Debug.WriteLine($"ApplyShutdownLogToLastBootRecordAsync error: {ex.Message}");
         }
     }
 
@@ -235,6 +203,7 @@ WHERE id = @id
             }
         }
 
+        // パソコンがデーターベースに登録されていない場合、INSERTしてID取得
         const string insertQuery = @"
 INSERT INTO pc_name (pc_name)
 VALUES (@pc_name)

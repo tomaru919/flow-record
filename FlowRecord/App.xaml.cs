@@ -17,7 +17,7 @@ public partial class App : System.Windows.Application {
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "FlowRecord",
-            "shutdown.log"
+            "shutdown.txt"
         );
 
     private static void AppendLine(string line) {
@@ -48,13 +48,10 @@ public partial class App : System.Windows.Application {
     protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
 
-        Debug.WriteLine("=== OnStartup 開始 ===");
-
         // PCシャットダウン/ログオフ通知
         SessionEnding += OnSessionEnding;
 
         _mainWindow = new MainWindow();
-        Debug.WriteLine("MainWindow 作成完了");
 
         Icon? icon = null;
         try {
@@ -119,14 +116,9 @@ public partial class App : System.Windows.Application {
     // ★ここが重要：PCシャットダウン中はDBを触らない
     // 代わりにローカルファイルへ { id, shutdown_time } を保存するだけ
     private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e) {
-        // テスト
         AppendLine($"{DateTime.Now}");
 
         if (_mainWindow == null) return;
-
-        // try {
-        //     _mainWindow.SaveShutdownPendingFile(DateTime.Now);
-        // } catch { }
 
         _mainWindow.IsExiting = true;
     }
