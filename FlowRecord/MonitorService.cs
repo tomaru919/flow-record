@@ -100,7 +100,7 @@ public class MonitorService {
             _ = GetWindowThreadProcessId(handle, out uint processId);
             try {
                 Process process = Process.GetProcessById((int)processId);
-                return $"{process.ProcessName} - {text}";
+                return process.ProcessName;
             } catch { return text.ToString(); }
         }
         return "";
@@ -119,8 +119,11 @@ public class MonitorService {
             var readText = File.ReadAllLines(LogPath).Last();
             if (string.IsNullOrWhiteSpace(readText)) return;
             shutdownTime = DateTime.Parse(readText);
+        } catch (FormatException ex) {
+            Debug.WriteLine($"parse error: {ex}");
+            return;
         } catch (Exception ex) {
-            Debug.WriteLine($"ApplyShutdownLogToLastBootRecordAsync read error: {ex}");
+            Debug.WriteLine($"ApplyShutdownLogToLastBootRecordAsync read error: {ex.Message}");
             return;
         }
 
@@ -158,7 +161,6 @@ WHERE id = @id AND pc_name_id = @pc_name_id;";
 
                 var affected = await cmd.ExecuteNonQueryAsync();
 
-                Debug.WriteLine(affected);
                 // 成功したらログを消す（次回また同じ shutdown_time を上書きしないため）
                 if (affected > 0) {
                     try { File.Delete(LogPath); } catch { }
