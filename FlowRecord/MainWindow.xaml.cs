@@ -3,6 +3,7 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32; // Registry用
 using FlowRecord.Monitor;
+using System.Diagnostics;
 
 namespace FlowRecord;
 
@@ -11,9 +12,7 @@ public partial class MainWindow : Window {
 
     public bool IsExiting { get; set; } = false;
 
-    // なぜDBに保存されたことを確認しないといけないのか？
-    // ShutdownAndSaveAsync関数が2回呼ばれることはあるのか？
-    private bool _shutdownRecorded = false;
+    private bool _isPausedOrStopped = false;
 
     public MainWindow() {
         InitializeComponent();
@@ -21,6 +20,9 @@ public partial class MainWindow : Window {
 
         _monitorService = new MonitorService();
         _monitorService.Initialize();
+
+        // 電源状態（スリープ・復帰）の監視を開始
+        SystemEvents.SessionSwitch += OnSessionSwitch;
 
         // ★起動時の処理（boot INSERT → id確保 → pendingファイル読んで UPDATE → 監視開始）
         _monitorService.Start();
@@ -64,11 +66,52 @@ public partial class MainWindow : Window {
 
     // Exitボタン用：DBへ shutdown_time を確実に書く
     public async Task ShutdownAndSaveAsync(DateTime shutdownTime) {
-        if (_shutdownRecorded) return;
-        _shutdownRecorded = true;
+        if (_isPausedOrStopped) return;
+        _isPausedOrStopped = true;
 
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
+
+    // 最近のPCはスリープイベントが来ない場合でも、ロックイベントは来る場合が多い
+    private async void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
+        switch (e.Reason) {
+            case SessionSwitchReason.SessionLock:
+                Debug.WriteLine("PCがロックされました（スリープ扱い）");
+                // await HandlePauseAsync();
+                break;
+            
+            case SessionSwitchReason.SessionUnlock:
+                Debug.WriteLine("PCのロックが解除されました（復帰扱い）");
+                // HandleResume();
+                break;
+        }
+    }
+
+    // ★共通化: 停止処理（スリープ/ロック共通）
+    // private async Task HandlePauseAsync() {
+    //     // 既に停止済みなら何もしない（ロックとスリープが連続で来ても1回だけ実行）
+    //     if (_isPausedOrStopped) return;
+    //     _isPausedOrStopped = true;
+
+    //     try {
+    //         await _monitorService.RecordShutdownAndStopAsync(DateTime.Now);
+    //     } catch (Exception ex) {
+    //         Debug.WriteLine($"停止処理エラー: {ex.Message}");
+    //     }
+    // }
+
+    // ★共通化: 再開処理（復帰/ロック解除共通）
+    // private void HandleResume() {
+    //     // 既に記録中なら何もしない
+    //     if (!_isPausedOrStopped) return;
+    //     _isPausedOrStopped = false;
+
+    //     try {
+    //         _monitorService.Start();
+    //     } catch (Exception ex) {
+    //         Debug.WriteLine($"再開処理エラー: {ex.Message}");
+    //     }
+    // }
 
     private static void SetStartup() {
         try {

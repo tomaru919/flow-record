@@ -12,7 +12,6 @@ namespace FlowRecord;
 /// Interaction logic for App.xaml
 /// </summary>
 public partial class App : System.Windows.Application {
-    // テスト
     private static string LogPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -23,7 +22,7 @@ public partial class App : System.Windows.Application {
     private static void AppendLine(string line) {
         try {
             var dir = Path.GetDirectoryName(LogPath)!;
-            Directory.CreateDirectory(dir); // ★フォルダが無いと失敗する
+            Directory.CreateDirectory(dir);
 
             using var fs = new FileStream(
                 LogPath,
