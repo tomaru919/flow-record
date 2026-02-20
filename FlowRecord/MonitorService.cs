@@ -171,6 +171,72 @@ WHERE id = @id AND pc_name_id = @pc_name_id;";
         }
     }
 
+    public async Task RecordSleepAsync(DateTime sleepTime) {
+        await FlushCurrentWindowAsync(sleepTime);
+
+        var pcNameId = await EnsurePcNameIdAsync();
+        if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
+
+        try {
+            await using var conn = new NpgsqlConnection(connectionString);
+            await conn.OpenAsync();
+
+            const string query = @"
+INSERT INTO sleep_wake (pc_name_id, sleep_time)
+VALUES (@pc_name_id, @sleep_time)";
+
+            await using var cmd = new NpgsqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+            cmd.Parameters.AddWithValue("sleep_time", sleepTime);
+            await cmd.ExecuteNonQueryAsync();
+        } catch (Exception ex) {
+            Debug.WriteLine($"RecordSleepAsync error: {ex.Message}");
+        }
+    }
+
+    public async Task RecordWakeAsync(DateTime wakeTime) {
+        await FlushCurrentWindowAsync(wakeTime);
+
+        var pcNameId = await EnsurePcNameIdAsync();
+        if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
+
+        try {
+            await using var conn = new NpgsqlConnection(connectionString);
+            await conn.OpenAsync();
+
+            // 最新の sleep_time の行を取得する
+            const string selectId = @"
+SELECT id
+FROM sleep_wake
+WHERE pc_name_id = @pc_name_id AND wake_time IS NULL
+ORDER BY sleep_time DESC
+LIMIT 1";
+
+            long? lastId = null;
+            await using (var cmd = new NpgsqlCommand(selectId, conn)) {
+                cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+                var result = await cmd.ExecuteScalarAsync();
+                if (result != null && result != DBNull.Value) lastId = Convert.ToInt64(result);
+            }
+
+            if (!lastId.HasValue) return;
+
+            const string update = @"
+UPDATE sleep_wake
+SET wake_time = @wake_time
+WHERE id = @id AND pc_name_id = @pc_name_id";
+
+            await using (var cmd = new NpgsqlCommand(update, conn)) {
+                cmd.Parameters.AddWithValue("wake_time", wakeTime);
+                cmd.Parameters.AddWithValue("id", lastId.Value);
+                cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+                await cmd.ExecuteNonQueryAsync();
+            }
+        } catch (Exception ex) {
+            Debug.WriteLine($"RecordWakeAsync error: {ex.Message}");
+        }
+    }
+
     private async Task FlushCurrentWindowAsync(DateTime endTime) {
         if (string.IsNullOrWhiteSpace(currentWindow)) return;
         await CloseCurrentWindowAsync(endTime);

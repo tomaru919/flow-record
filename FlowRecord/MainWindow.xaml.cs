@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Win32; // Registry用
+using Microsoft.Win32;
 using FlowRecord.Monitor;
 using System.Diagnostics;
 
@@ -76,42 +76,33 @@ public partial class MainWindow : Window {
     private async void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
         switch (e.Reason) {
             case SessionSwitchReason.SessionLock:
-                Debug.WriteLine("PCがロックされました（スリープ扱い）");
-                // await HandlePauseAsync();
+                if (_isPausedOrStopped) return;
+                _isPausedOrStopped = true;
+
+                try {
+                    await _monitorService.RecordSleepAsync(DateTime.Now);
+                } catch (Exception ex) {
+                    Debug.WriteLine($"停止処理エラー: {ex.Message}");
+                }
                 break;
             
             case SessionSwitchReason.SessionUnlock:
-                Debug.WriteLine("PCのロックが解除されました（復帰扱い）");
-                // HandleResume();
+                if (!_isPausedOrStopped) return;
+                _isPausedOrStopped = false;
+
+                try {
+                    _monitorService.Start();
+                    await _monitorService.RecordWakeAsync(DateTime.Now);
+                } catch (Exception ex) {
+                    Debug.WriteLine($"再開処理エラー: {ex.Message}");
+                }
+                break;
+            
+            default:
+                Debug.WriteLine($"その他のセッションイベント: {e.Reason}");
                 break;
         }
     }
-
-    // ★共通化: 停止処理（スリープ/ロック共通）
-    // private async Task HandlePauseAsync() {
-    //     // 既に停止済みなら何もしない（ロックとスリープが連続で来ても1回だけ実行）
-    //     if (_isPausedOrStopped) return;
-    //     _isPausedOrStopped = true;
-
-    //     try {
-    //         await _monitorService.RecordShutdownAndStopAsync(DateTime.Now);
-    //     } catch (Exception ex) {
-    //         Debug.WriteLine($"停止処理エラー: {ex.Message}");
-    //     }
-    // }
-
-    // ★共通化: 再開処理（復帰/ロック解除共通）
-    // private void HandleResume() {
-    //     // 既に記録中なら何もしない
-    //     if (!_isPausedOrStopped) return;
-    //     _isPausedOrStopped = false;
-
-    //     try {
-    //         _monitorService.Start();
-    //     } catch (Exception ex) {
-    //         Debug.WriteLine($"再開処理エラー: {ex.Message}");
-    //     }
-    // }
 
     private static void SetStartup() {
         try {
