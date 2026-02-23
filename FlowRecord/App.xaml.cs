@@ -37,7 +37,7 @@ public partial class App : System.Windows.Application {
             sw.Flush();
             fs.Flush(true);
         } catch {
-            // まずは握りつぶしてOK。必要なら Debug.WriteLine で出す
+            Debug.WriteLine("シャットダウンログの保存に失敗");
         }
     }
 

@@ -67,10 +67,6 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    console.log("Received records:", records)
-  }, [records])
-
   return (
     <div className="container">
       <Bar data={{

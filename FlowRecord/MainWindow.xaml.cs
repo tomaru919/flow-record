@@ -72,7 +72,6 @@ public partial class MainWindow : Window {
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
 
-    // 最近のPCはスリープイベントが来ない場合でも、ロックイベントは来る場合が多い
     private async void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
         switch (e.Reason) {
             case SessionSwitchReason.SessionLock:
