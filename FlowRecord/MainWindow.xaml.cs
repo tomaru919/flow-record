@@ -53,6 +53,9 @@ public partial class MainWindow : Window {
         if (message == "getRecords") {
             var json = await _monitorService.GetRecordsJsonAsync();
             webView.CoreWebView2.PostWebMessageAsJson(json);
+        } else if (message == "getBootDurations") {
+            var json = await _monitorService.GetDailyBootDurationJsonAsync();
+            webView.CoreWebView2.PostWebMessageAsJson(json);
         }
     }
 

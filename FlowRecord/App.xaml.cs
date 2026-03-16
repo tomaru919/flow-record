@@ -1,9 +1,5 @@
-﻿using System.Configuration;
-using System.Data;
-using System.Diagnostics;
-using System.Drawing;
+﻿using System.Diagnostics;
 using System.Windows;
-using Microsoft.Win32;
 using System.IO;
 
 namespace FlowRecord;

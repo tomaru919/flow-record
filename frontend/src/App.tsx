@@ -27,8 +27,19 @@ interface Record {
   end_time: string
 }
 
+interface BootDuration {
+  date: string
+  total_hours: number
+}
+
+interface WebViewMessage {
+  type: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any
+}
+
 interface WebViewMessageEvent {
-  data: Record[]
+  data: WebViewMessage
 }
 
 declare global {
@@ -45,46 +56,84 @@ declare global {
 
 function App() {
   const [records, setRecords] = useState<Record[]>([])
+  const [bootDurations, setBootDurations] = useState<BootDuration[]>([])
   
   const refreshData = () => {
     if (window.chrome?.webview) {
       window.chrome.webview.postMessage('getRecords')
+      window.chrome.webview.postMessage('getBootDurations')
     } else {
       console.warn("Not running in WebView2")
     }
   }
 
   useEffect(() => {
-    // WebView2からのメッセージ受信設定
     if (window.chrome?.webview) {
-      window.chrome.webview.addEventListener('message', (event) => {
-        const data = event.data // JSON object already parsed or string
-        setRecords(data)
-      })
+      const handleMessage = (event: WebViewMessageEvent) => {
+        const message = event.data
+        
+        if (message.type === 'records') {
+          console.log('Received records:', message)
+          setRecords(message.data)
+        } else if (message.type === 'bootDurations') {
+          console.log('Received boot durations:', message)
+          setBootDurations(message.data)
+        }
+      }
 
-      // 初回ロード時にデータ要求
+      window.chrome.webview.addEventListener('message', handleMessage)
       refreshData()
+
+      return () => {
+        window.chrome?.webview?.removeEventListener('message', handleMessage)
+      }
     }
   }, [])
 
+  const chartData = {
+    labels: bootDurations.map(d => d.date),
+    datasets: [
+      {
+        label: 'PC Uptime (Hours)',
+        data: bootDurations.map(d => d.total_hours),
+        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1
+      }
+    ]
+  }
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: 'Daily PC Usage',
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Hours'
+        }
+      }
+    }
+  }
+
   return (
     <div className="container">
-      <Bar data={{
-        labels: ['Work', 'Break', 'Meeting'],
-        datasets: [
-          {
-            data: [30, 20, 50],
-            backgroundColor: [
-              '#FF6384',
-              '#36A2EB',
-              '#FFCE56'
-            ],
-            borderWidth: 1
-          }
-        ]
-      }} />
+      <div className="chart-wrapper">
+        <Bar data={chartData} options={chartOptions} />
+      </div>
+      
       <h1>FlowRecord Daily Log</h1>
       <button onClick={refreshData}>Refresh</button>
+      
       <div className="table-wrapper">
         <table>
           <thead>

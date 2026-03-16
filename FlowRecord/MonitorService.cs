@@ -63,14 +63,14 @@ public class MonitorService {
             // 2) pendingファイルを読んで、前回の shutdown_time を UPDATE
             // 3) 監視ループ開始
             try {
-                var pcNameId = await EnsurePcNameIdAsync().ConfigureAwait(false);
+                var pcNameId = await EnsurePcNameIdAsync();
                 if (!pcNameId.HasValue) return;
 
-                await ApplyShutdownLogToLastBootRecordAsync().ConfigureAwait(false);
+                await ApplyShutdownLogToLastBootRecordAsync();
 
-                _bootShutdownId = await CreateBootRecordAsync(DateTime.Now).ConfigureAwait(false);
+                _bootShutdownId = await CreateBootRecordAsync(DateTime.Now);
 
-                await MonitoringLoop(_cts.Token).ConfigureAwait(false);
+                await MonitoringLoop(_cts.Token);
             } catch (Exception ex) {
                 // ここで落ちても監視ループは開始しない（DB前提アプリなので）
                 Debug.WriteLine($"MonitorService.Start error: {ex}");
@@ -457,7 +457,44 @@ LIMIT 100";
                     end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString()
                 });
             }
-            return JsonSerializer.Serialize(results);
-        } catch { return "[]"; }
+            return JsonSerializer.Serialize(new { type = "records", data = results });
+        } catch { return "{\"type\":\"records\",\"data\":[]}"; }
+    }
+
+    public async Task<string> GetDailyBootDurationJsonAsync() {
+        try {
+            if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"bootDurations\",\"data\":[]}";
+            await using var conn = new NpgsqlConnection(connectionString);
+            await conn.OpenAsync();
+            const string query = @"
+SELECT
+    ds.date,
+    COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(bs.shutdown_time, @now) - bs.boot_time))), 0) / 3600 AS total_hours
+FROM (
+    SELECT (@today - (i || ' day')::interval)::date AS date
+    FROM generate_series(0, 6) i
+) ds
+LEFT JOIN boot_shutdown bs ON DATE(bs.boot_time) = ds.date AND bs.pc_name_id = @pc_name_id
+GROUP BY ds.date
+ORDER BY ds.date ASC";
+            var pcNameId = await EnsurePcNameIdAsync();
+            if (!pcNameId.HasValue) return "{\"type\":\"bootDurations\",\"data\":[]}";
+            await using var cmd = new NpgsqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+            cmd.Parameters.AddWithValue("now", DateTime.Now);
+            cmd.Parameters.AddWithValue("today", DateTime.Today);
+            var reader = await cmd.ExecuteReaderAsync();
+            var results = new List<object>();
+            while (await reader.ReadAsync()) {
+                results.Add(new {
+                    date = ((DateOnly)reader["date"]).ToString("yyyy-MM-dd"),
+                    total_hours = Math.Round(Convert.ToDouble(reader["total_hours"]), 2)
+                });
+            }
+            return JsonSerializer.Serialize(new { type = "bootDurations", data = results });
+        } catch (Exception ex) {
+            Debug.WriteLine($"GetDailyBootDurationJsonAsync error: {ex.Message}");
+            return "{\"type\":\"bootDurations\",\"data\":[]}";
+        }
     }
 }
