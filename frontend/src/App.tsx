@@ -7,6 +7,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  type TooltipItem,
 } from "chart.js"
 import { Bar } from "react-chartjs-2"
 import './App.css'
@@ -94,7 +95,7 @@ function App() {
     labels: bootDurations.map(d => d.date),
     datasets: [
       {
-        label: 'PC Uptime (Hours)',
+        label: 'PC 稼働時間',
         data: bootDurations.map(d => d.total_hours),
         backgroundColor: 'rgba(54, 162, 235, 0.6)',
         borderColor: 'rgba(54, 162, 235, 1)',
@@ -113,13 +114,24 @@ function App() {
         display: true,
         text: 'Daily PC Usage',
       },
+      tooltip: {
+        callbacks: {
+          label: (context: TooltipItem<'bar'>) => {
+            const value = context.raw as number
+            const totalMinutes = Math.round(value * 60)
+            const hours = Math.floor(totalMinutes / 60)
+            const minutes = totalMinutes % 60
+            return `稼働時間: ${hours}時間${minutes}分`
+          }
+        }
+      }
     },
     scales: {
       y: {
         beginAtZero: true,
         title: {
           display: true,
-          text: 'Hours'
+          text: '時間'
         }
       }
     }

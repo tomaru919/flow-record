@@ -27,3 +27,10 @@ ORDER BY ds.date ASC
 - **Cause**: PostgreSQL's `CURRENT_TIMESTAMP` and `CURRENT_DATE` were defaulting to UTC, which caused a mismatch when compared with the local time `boot_time` recorded by the C# application.
 - **Fix**: Modified `MonitorService.GetDailyBootDurationJsonAsync` to pass local `DateTime.Now` and `DateTime.Today` as parameters (`@now`, `@today`) to the SQL query instead of relying on PostgreSQL's server-side current time.
 - **Impact**: Ensures that usage calculations are always performed using the same local time reference as the recorded events.
+
+### 2026-03-24: Improve Uptime Display and Typing
+- **Change**: Updated the daily activity chart to display uptime in "XX時間YY分" (hours and minutes) format in the tooltip.
+- **Localization**: Changed chart labels and axis titles to Japanese ("PC 稼働時間", "時間").
+- **Typing**: Added `TooltipItem<'bar'>` from `chart.js` to provide proper typing for the tooltip callback context in `App.tsx`.
+- **Logic**: Refined the calculation to `Math.round(value * 60)` before splitting into hours and minutes to ensure accuracy and avoid rounding errors (e.g., "60分").
+
