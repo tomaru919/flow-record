@@ -20,6 +20,9 @@ GROUP BY ds.date
 ORDER BY ds.date ASC
 ```
 
+## Documentation Guidelines
+- **Session Recording**: EVERY session must be recorded in the "Session Log" section of this file. Each entry should include the date, a brief title, and a summary of changes/fixes.
+
 ## Session Log
 
 ### 2026-03-15: Fix Negative Usage Display on Startup
@@ -34,3 +37,9 @@ ORDER BY ds.date ASC
 - **Typing**: Added `TooltipItem<'bar'>` from `chart.js` to provide proper typing for the tooltip callback context in `App.tsx`.
 - **Logic**: Refined the calculation to `Math.round(value * 60)` before splitting into hours and minutes to ensure accuracy and avoid rounding errors (e.g., "60分").
 
+### 2026-04-01: Modernize UI and Chart Style
+- **Chart Aesthetics**: Updated to a solid blue (#36a2eb) with `borderRadius: 4`. Simplified X-axis labels to "M/D" format and added "h" suffix to Y-axis ticks.
+- **Layout Redesign**: Moved the title and "Refresh" button to a flex header at the top for a cleaner dashboard hierarchy.
+- **Dark Mode Support**: Added theme-aware styles for `chart-wrapper` and `table-wrapper`. In dark mode, card backgrounds use `#2b2b2b` with subtle shadows.
+- **Component Refinement**: Removed redundant chart legends and titles. Increased overall max-width to 900px for better visibility.
+- **Table Styling**: Updated table headers and rows with better spacing, borders, and colors that respond to the system theme.

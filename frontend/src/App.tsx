@@ -92,29 +92,40 @@ function App() {
   }, [])
 
   const chartData = {
-    labels: bootDurations.map(d => d.date),
+    labels: bootDurations.map(d => {
+      const date = new Date(d.date);
+      return `${date.getMonth() + 1}/${date.getDate()}`;
+    }),
     datasets: [
       {
         label: 'PC 稼働時間',
         data: bootDurations.map(d => d.total_hours),
-        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1
+        backgroundColor: '#36a2eb',
+        borderRadius: 4,
+        hoverBackgroundColor: '#2980b9',
       }
     ]
   }
 
   const chartOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: 'top' as const,
+        display: false,
       },
       title: {
-        display: true,
-        text: 'Daily PC Usage',
+        display: false,
       },
       tooltip: {
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        padding: 12,
+        titleFont: {
+          size: 14,
+        },
+        bodyFont: {
+          size: 13,
+        },
         callbacks: {
           label: (context: TooltipItem<'bar'>) => {
             const value = context.raw as number
@@ -127,11 +138,26 @@ function App() {
       }
     },
     scales: {
+      x: {
+        grid: {
+          display: false,
+        },
+        ticks: {
+          font: {
+            family: "system-ui, -apple-system, sans-serif",
+          }
+        }
+      },
       y: {
         beginAtZero: true,
-        title: {
-          display: true,
-          text: '時間'
+        grid: {
+          color: 'rgba(200, 200, 200, 0.1)',
+        },
+        ticks: {
+          font: {
+            family: "system-ui, -apple-system, sans-serif",
+          },
+          callback: (value: string | number) => `${value}h`
         }
       }
     }
@@ -139,12 +165,14 @@ function App() {
 
   return (
     <div className="container">
+      <header className="header">
+        <h1>FlowRecord Daily Log</h1>
+        <button onClick={refreshData}>Refresh</button>
+      </header>
+
       <div className="chart-wrapper">
         <Bar data={chartData} options={chartOptions} />
       </div>
-      
-      <h1>FlowRecord Daily Log</h1>
-      <button onClick={refreshData}>Refresh</button>
       
       <div className="table-wrapper">
         <table>
