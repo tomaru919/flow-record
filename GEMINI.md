@@ -43,3 +43,9 @@ ORDER BY ds.date ASC
 - **Dark Mode Support**: Added theme-aware styles for `chart-wrapper` and `table-wrapper`. In dark mode, card backgrounds use `#2b2b2b` with subtle shadows.
 - **Component Refinement**: Removed redundant chart legends and titles. Increased overall max-width to 900px for better visibility.
 - **Table Styling**: Updated table headers and rows with better spacing, borders, and colors that respond to the system theme.
+
+### 2026-04-02: Make UI Responsive
+- **Flexibility**: Updated `header`, `chart-wrapper`, and `table-wrapper` to expand with window width. Increased `max-width` limit to 1200px.
+- **Dynamic Height**: Changed `chart-wrapper` height to `50vh` (min 300px, max 500px) so the chart resizes based on window height.
+- **Stability**: Applied `box-sizing: border-box` to all elements to prevent layout issues from padding.
+- **Mobile Support**: Added media queries to adjust the header layout (vertical stack) on narrow screens (under 600px).
