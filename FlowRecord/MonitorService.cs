@@ -497,4 +497,51 @@ ORDER BY ds.date ASC";
             return "{\"type\":\"bootDurations\",\"data\":[]}";
         }
     }
+
+    public async Task<string> GetActiveWindowDurationJsonAsync() {
+        try {
+            if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
+            await using var conn = new NpgsqlConnection(connectionString);
+            await conn.OpenAsync();
+            
+            // 今日の0時から明日（今日+1日）の0時までの範囲で計算
+            var today = DateTime.Today;
+            var tomorrow = today.AddDays(1);
+            var now = DateTime.Now;
+
+            const string query = @"
+SELECT
+    window_title,
+    SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(end_time, @now), @tomorrow) - GREATEST(start_time, @today)))) / 3600 AS duration_hours
+FROM active_window
+WHERE pc_name_id = @pc_name_id
+  AND start_time < @tomorrow
+  AND COALESCE(end_time, @now) > @today
+GROUP BY window_title
+HAVING SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(end_time, @now), @tomorrow) - GREATEST(start_time, @today)))) > 0
+ORDER BY duration_hours DESC";
+
+            var pcNameId = await EnsurePcNameIdAsync();
+            if (!pcNameId.HasValue) return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
+            
+            await using var cmd = new NpgsqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+            cmd.Parameters.AddWithValue("now", now);
+            cmd.Parameters.AddWithValue("today", today);
+            cmd.Parameters.AddWithValue("tomorrow", tomorrow);
+
+            var reader = await cmd.ExecuteReaderAsync();
+            var results = new List<object>();
+            while (await reader.ReadAsync()) {
+                results.Add(new {
+                    window_title = reader["window_title"].ToString(),
+                    duration_hours = Math.Round(Convert.ToDouble(reader["duration_hours"]), 4)
+                });
+            }
+            return JsonSerializer.Serialize(new { type = "activeWindowDurations", data = results });
+        } catch (Exception ex) {
+            Debug.WriteLine($"GetActiveWindowDurationJsonAsync error: {ex.Message}");
+            return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
+        }
+    }
 }

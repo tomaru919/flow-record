@@ -56,6 +56,9 @@ public partial class MainWindow : Window {
         } else if (message == "getBootDurations") {
             var json = await _monitorService.GetDailyBootDurationJsonAsync();
             webView.CoreWebView2.PostWebMessageAsJson(json);
+        } else if (message == "getActiveWindowDurations") {
+            var json = await _monitorService.GetActiveWindowDurationJsonAsync();
+            webView.CoreWebView2.PostWebMessageAsJson(json);
         }
     }
 
