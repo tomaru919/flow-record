@@ -469,7 +469,12 @@ LIMIT 100";
             const string query = @"
 SELECT
     ds.date,
-    COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(bs.shutdown_time, @now) - bs.boot_time))), 0) / 3600 AS total_hours
+    COALESCE(SUM(CASE WHEN bs.boot_time IS NOT NULL THEN
+        EXTRACT(EPOCH FROM (
+            LEAST(COALESCE(bs.shutdown_time, @now), ds.date::timestamp + INTERVAL '1 day')
+            - GREATEST(bs.boot_time, ds.date::timestamp)
+        ))
+    END), 0) / 3600 AS total_hours
 FROM (
     SELECT (@today - (i || ' day')::interval)::date AS date
     FROM generate_series(0, 6) i

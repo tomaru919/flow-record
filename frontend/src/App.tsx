@@ -1,27 +1,7 @@
 import { useEffect, useState } from 'react'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement,
-  type TooltipItem,
-} from "chart.js"
-import { Bar, Pie } from "react-chartjs-2"
 import './App.css'
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement
-)
+import DailyActivityChart from './components/DailyActivityChart'
+import ActiveWindowChart from './components/ActiveWindowChart'
 
 interface Record {
   window_title: string
@@ -83,13 +63,13 @@ function App() {
         const message = event.data
         
         if (message.type === 'records') {
-          console.log('Received records:', message)
+          console.log('Received records:', message.data)
           setRecords(message.data)
         } else if (message.type === 'bootDurations') {
-          console.log('Received boot durations:', message)
+          console.log('Received boot durations:', message.data)
           setBootDurations(message.data)
         } else if (message.type === 'activeWindowDurations') {
-          console.log('Received active window durations:', message)
+          console.log('Received active window durations:', message.data)
           setActiveWindowDurations(message.data)
         }
       }
@@ -103,143 +83,6 @@ function App() {
     }
   }, [])
 
-  const chartData = {
-    labels: bootDurations.map(d => {
-      const date = new Date(d.date);
-      return `${date.getMonth() + 1}/${date.getDate()}`;
-    }),
-    datasets: [
-      {
-        label: 'PC 稼働時間',
-        data: bootDurations.map(d => d.total_hours),
-        backgroundColor: '#36a2eb',
-        borderRadius: 4,
-        hoverBackgroundColor: '#2980b9',
-      }
-    ]
-  }
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      title: {
-        display: true,
-        text: '過去7日間の稼働時間',
-        color: '#888',
-        font: {
-          size: 14,
-          weight: 'normal' as const
-        }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 12,
-        titleFont: {
-          size: 14,
-        },
-        bodyFont: {
-          size: 13,
-        },
-        callbacks: {
-          label: (context: TooltipItem<'bar'>) => {
-            const value = context.raw as number
-            const totalMinutes = Math.round(value * 60)
-            const hours = Math.floor(totalMinutes / 60)
-            const minutes = totalMinutes % 60
-            return `稼働時間: ${hours}時間${minutes}分`
-          }
-        }
-      }
-    },
-    scales: {
-      x: {
-        grid: {
-          display: false,
-        },
-        ticks: {
-          font: {
-            family: "system-ui, -apple-system, sans-serif",
-          }
-        }
-      },
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(200, 200, 200, 0.1)',
-        },
-        ticks: {
-          font: {
-            family: "system-ui, -apple-system, sans-serif",
-          },
-          callback: (value: string | number) => `${value}h`
-        }
-      }
-    }
-  }
-
-  const pieColors = [
-    '#36a2eb', '#ff6384', '#ffce56', '#4bc0c0', '#9966ff',
-    '#ff9f40', '#c9cbcf', '#70a1ff', '#7bed9f', '#ff4757'
-  ]
-
-  const pieChartData = {
-    labels: activeWindowDurations.map(d => d.window_title),
-    datasets: [
-      {
-        data: activeWindowDurations.map(d => d.duration_hours),
-        backgroundColor: pieColors,
-        borderColor: 'transparent',
-        hoverOffset: 4
-      }
-    ]
-  }
-
-  const pieChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'right' as const,
-        labels: {
-          boxWidth: 12,
-          padding: 15,
-          color: '#888',
-          font: {
-            size: 11
-          }
-        }
-      },
-      title: {
-        display: true,
-        text: '今日のアクティブウィンドウ内訳',
-        color: '#888',
-        font: {
-          size: 14,
-          weight: 'normal' as const
-        }
-      },
-      tooltip: {
-        callbacks: {
-          label: (context: TooltipItem<'pie'>) => {
-            const value = context.raw as number
-            const totalMinutes = Math.round(value * 60)
-            const hours = Math.floor(totalMinutes / 60)
-            const minutes = totalMinutes % 60
-            
-            const total = (context.dataset.data as number[]).reduce((a, b) => a + b, 0)
-            const percentage = ((value / total) * 100).toFixed(1)
-            
-            return ` ${hours}時間${minutes}分 (${percentage}%)`
-          }
-        }
-      }
-    }
-  }
-
   return (
     <div className="container">
       <header className="header">
@@ -248,12 +91,8 @@ function App() {
       </header>
 
       <div className="charts-container">
-        <div className="chart-wrapper bar-chart">
-          <Bar data={chartData} options={chartOptions} />
-        </div>
-        <div className="chart-wrapper pie-chart">
-          <Pie data={pieChartData} options={pieChartOptions} />
-        </div>
+        <DailyActivityChart bootDurations={bootDurations} />
+        <ActiveWindowChart activeWindowDurations={activeWindowDurations} />
       </div>
       
       <div className="table-wrapper">
