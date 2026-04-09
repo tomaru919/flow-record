@@ -88,6 +88,12 @@ ORDER BY ds.date ASC
 - **Cause**: For sessions with no `shutdown_time` (still active), the query used `@now` (current time) as the end time. Since `@now` is a future date relative to the session's start day, the duration spanned multiple days, all attributed to the boot day.
 - **Fix**: Modified `GetDailyBootDurationJsonAsync` query to use `CASE WHEN bs.boot_time IS NOT NULL THEN ... END` inside `SUM`, capping end time with `LEAST(..., ds.date::timestamp + INTERVAL '1 day')` and start time with `GREATEST(bs.boot_time, ds.date::timestamp)`, ensuring each day's usage is bounded within that day's 24 hours and days with no boot record return 0.
 
+### 2026-04-09: Fix Active Window Duration Showing Inflated Values
+- **Issue**: Active window duration for a single window showed impossibly large values (e.g., 429 hours) in the pie chart.
+- **Cause**: The query used `start_time < @tomorrow AND COALESCE(end_time, @now) > @today` to filter sessions. Old sessions with `end_time = NULL` (stale unclosed sessions) satisfied this condition and were each counted as "now − midnight today" hours. Multiple stale sessions for the same window title were summed together, producing enormous values.
+- **Fix**: Restricted the WHERE clause to `start_time >= @today AND start_time < @tomorrow`, so only sessions that **started today** are included. Removed the `GREATEST(start_time, @today)` wrapper since `start_time` is already bounded by `@today`.
+- **Impact**: Ensures the active window pie chart reflects only today's activity and is not polluted by stale historical sessions.
+
 ### 2026-04-06: Add Active Window Distribution Pie Chart
 - **Feature**: Added a pie chart to visualize the distribution of active window time for the current day.
 - **Backend**: Implemented `GetActiveWindowDurationJsonAsync` in `MonitorService.cs` using a PostgreSQL query that calculates durations within the boundaries of "today" (00:00 to 23:59).

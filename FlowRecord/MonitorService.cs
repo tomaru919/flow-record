@@ -517,13 +517,13 @@ ORDER BY ds.date ASC";
             const string query = @"
 SELECT
     window_title,
-    SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(end_time, @now), @tomorrow) - GREATEST(start_time, @today)))) / 3600 AS duration_hours
+    SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(end_time, @now), @tomorrow) - start_time))) / 3600 AS duration_hours
 FROM active_window
 WHERE pc_name_id = @pc_name_id
+  AND start_time >= @today
   AND start_time < @tomorrow
-  AND COALESCE(end_time, @now) > @today
 GROUP BY window_title
-HAVING SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(end_time, @now), @tomorrow) - GREATEST(start_time, @today)))) > 0
+HAVING SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(end_time, @now), @tomorrow) - start_time))) > 0
 ORDER BY duration_hours DESC";
 
             var pcNameId = await EnsurePcNameIdAsync();
