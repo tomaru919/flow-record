@@ -108,8 +108,6 @@ public partial class App : System.Windows.Application {
         base.OnExit(e);
     }
 
-    // ★ここが重要：PCシャットダウン中はDBを触らない
-    // 代わりにローカルファイルへ { id, shutdown_time } を保存するだけ
     private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e) {
         AppendLine($"{DateTime.Now}");
 

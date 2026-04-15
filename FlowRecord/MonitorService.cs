@@ -182,12 +182,13 @@ WHERE id = @id AND pc_name_id = @pc_name_id;";
             await conn.OpenAsync();
 
             const string query = @"
-INSERT INTO sleep_wake (pc_name_id, sleep_time)
-VALUES (@pc_name_id, @sleep_time)";
+INSERT INTO sleep_wake (pc_name_id, sleep_time, created_at)
+VALUES (@pc_name_id, @sleep_time, @created_at)";
 
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
             cmd.Parameters.AddWithValue("sleep_time", sleepTime);
+            cmd.Parameters.AddWithValue("created_at", DateTime.Now);
             await cmd.ExecuteNonQueryAsync();
         } catch (Exception ex) {
             Debug.WriteLine($"RecordSleepAsync error: {ex.Message}");
@@ -273,12 +274,13 @@ WHERE id = @id AND pc_name_id = @pc_name_id";
 
         // パソコンがデーターベースに登録されていない場合、INSERTしてID取得
         const string insertQuery = @"
-INSERT INTO pc_name (pc_name)
-VALUES (@pc_name)
+INSERT INTO pc_name (pc_name, created_at)
+VALUES (@pc_name, @created_at)
 ON CONFLICT (pc_name) DO UPDATE SET pc_name = EXCLUDED.pc_name
 RETURNING id";
         await using var insertCmd = new NpgsqlCommand(insertQuery, conn);
         insertCmd.Parameters.AddWithValue("pc_name", pcName);
+        insertCmd.Parameters.AddWithValue("created_at", DateTime.Now);
         var inserted = await insertCmd.ExecuteScalarAsync();
         if (inserted != null && inserted != DBNull.Value) {
             _pcNameId = Convert.ToInt32(inserted);
@@ -294,12 +296,13 @@ RETURNING id";
         await conn.OpenAsync();
 
         const string query = @"
-INSERT INTO boot_shutdown (pc_name_id, boot_time)
-VALUES (@pc_name_id, @boot_time)
+INSERT INTO boot_shutdown (pc_name_id, boot_time, created_at)
+VALUES (@pc_name_id, @boot_time, @created_at)
 RETURNING id";
         await using var cmd = new NpgsqlCommand(query, conn);
         cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
         cmd.Parameters.AddWithValue("boot_time", bootTime);
+        cmd.Parameters.AddWithValue("created_at", DateTime.Now);
         var result = await cmd.ExecuteScalarAsync();
         return result == null || result == DBNull.Value ? null : Convert.ToInt64(result);
     }
@@ -359,14 +362,15 @@ WHERE id = @id AND shutdown_time IS NULL";
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-INSERT INTO active_window (pc_name_id, window_title, start_time, end_time)
-VALUES (@pc_name_id, @window_title, @start_time, @end_time)";
+INSERT INTO active_window (pc_name_id, window_title, start_time, end_time, created_at)
+VALUES (@pc_name_id, @window_title, @start_time, @end_time, @created_at)";
 
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
             cmd.Parameters.AddWithValue("window_title", windowTitle ?? "");
             cmd.Parameters.AddWithValue("start_time", startTime);
             cmd.Parameters.AddWithValue("end_time", endTime);
+            cmd.Parameters.AddWithValue("created_at", DateTime.Now);
             await cmd.ExecuteNonQueryAsync();
         } catch (Exception ex) { Debug.WriteLine($"DB Error: {ex.Message}"); }
     }
@@ -378,13 +382,14 @@ VALUES (@pc_name_id, @window_title, @start_time, @end_time)";
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-INSERT INTO active_window (pc_name_id, window_title, start_time, end_time)
-VALUES (@pc_name_id, @window_title, @start_time, NULL)
+INSERT INTO active_window (pc_name_id, window_title, start_time, end_time, created_at)
+VALUES (@pc_name_id, @window_title, @start_time, NULL, @created_at)
 RETURNING id";
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
             cmd.Parameters.AddWithValue("window_title", windowTitle ?? "");
             cmd.Parameters.AddWithValue("start_time", startTime);
+            cmd.Parameters.AddWithValue("created_at", DateTime.Now);
             var result = await cmd.ExecuteScalarAsync();
             return result == null || result == DBNull.Value ? null : Convert.ToInt64(result);
         } catch (Exception ex) {

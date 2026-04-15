@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include=".env" CopyToOutputDirectory="PreserveNewest" />
+    <None Include=".env" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="app.ico" />
   </ItemGroup>
 

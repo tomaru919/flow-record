@@ -102,10 +102,6 @@ public partial class MainWindow : Window {
                     Debug.WriteLine($"再開処理エラー: {ex.Message}");
                 }
                 break;
-            
-            default:
-                Debug.WriteLine($"その他のセッションイベント: {e.Reason}");
-                break;
         }
     }
 
