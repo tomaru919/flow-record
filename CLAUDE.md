@@ -94,6 +94,16 @@ ORDER BY ds.date ASC
 - **Fix**: Restricted the WHERE clause to `start_time >= @today AND start_time < @tomorrow`, so only sessions that **started today** are included. Removed the `GREATEST(start_time, @today)` wrapper since `start_time` is already bounded by `@today`.
 - **Impact**: Ensures the active window pie chart reflects only today's activity and is not polluted by stale historical sessions.
 
+### 2026-04-18: Fix Sleep/Wake Time Recording Bug
+- **Issue**: Sleep time was not recorded in `sleep_time`, and the wake time was incorrectly recorded in both `sleep_time` and `wake_time`. After fixing the event source, wake data was still not recorded.
+- **Cause (1)**: `SessionSwitchReason.SessionLock` fires again when Windows shows the login screen after waking from sleep. This caused `RecordSleepAsync` to be called at wake time.
+- **Cause (2)**: `PowerModes.Suspend` fires just before the system suspends, leaving no time for Supabase (network DB) writes to complete. As a result, no `sleep_wake` row existed in the DB, so `RecordWakeAsync` found nothing to update and returned early.
+- **Fix**: 
+  - Moved sleep/wake recording from `SessionSwitch` to `SystemEvents.PowerModeChanged`. `SessionLock` now only calls `StopMonitoringAsync`.
+  - `RecordSleepAsync` now writes sleep_time to a local file (`sleep.txt`) synchronously before the network call — same pattern as `shutdown.txt`.
+  - `RecordWakeAsync` reads `sleep.txt`, inserts a single row with both `sleep_time` and `wake_time`, then deletes the file. No longer relies on finding a pre-existing DB row.
+- **Impact**: Sleep and wake times are reliably recorded even when the DB write on suspend does not complete.
+
 ### 2026-04-06: Add Active Window Distribution Pie Chart
 - **Feature**: Added a pie chart to visualize the distribution of active window time for the current day.
 - **Backend**: Implemented `GetActiveWindowDurationJsonAsync` in `MonitorService.cs` using a PostgreSQL query that calculates durations within the boundaries of "today" (00:00 to 23:59).

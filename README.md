@@ -37,6 +37,7 @@
 - [ ] パソコンのカバーを開閉するときのスリープとスリープ解除を記録するプログラムに問題があります。スリープしたときに新しいsleep_wakeのレコードが作られず、解除したときに作成されます。さらに解除した時刻がsleep_timeのカラムと一つ前のレコードのwake_timeのカラムに挿入されます。スリープするボタンを押したときは正常に動作します。修正してください。
 - [x] create_atの時刻がおかしい(Supabase~.csvを参考)
 - [ ] DB Error: The operation has timed out
+- [ ] DB Error: Exception while reading from stream
 
 ## 課題
 - "Exit"ボタンを押したらパソコンのシャットダウン時間を記録できなくなる
@@ -55,3 +56,5 @@ dotnet publish -c Release -r win-x64 --self-contained true
 cd frontend/
 npm run build
 ```
+
+claude --resume 7e8fdae8-e2b7-47e7-a82e-d5c346739003
