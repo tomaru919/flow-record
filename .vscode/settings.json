@@ -7,6 +7,7 @@
         "**/dist": true,
         "**/*.sln": true,
         "**/*.gitignore": true,
-        "**/package-lock.json": true
+        "**/package-lock.json": true,
+        "**/.claude": true,
     }
 }

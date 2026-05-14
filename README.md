@@ -38,6 +38,8 @@
 - [x] create_atの時刻がおかしい(Supabase~.csvを参考)
 - [ ] DB Error: The operation has timed out
 - [ ] DB Error: Exception while reading from stream
+- [x] 環境変数の設定
+- [ ] スリープとスリープ解除を記録するときはログファイルに記録して、スリープ解除したときにデータベースに保存する
 
 ## 課題
 - "Exit"ボタンを押したらパソコンのシャットダウン時間を記録できなくなる

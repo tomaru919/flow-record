@@ -20,11 +20,6 @@ public partial class MainWindow : Window {
 
         _monitorService = new MonitorService();
         _monitorService.Initialize();
-
-        // 電源状態（スリープ・復帰）の監視を開始
-        // SystemEvents.SessionSwitch += OnSessionSwitch;
-
-        // ★起動時の処理（boot INSERT → id確保 → pendingファイル読んで UPDATE → 監視開始）
         _monitorService.Start();
 
         InitializeWebView();
@@ -77,33 +72,6 @@ public partial class MainWindow : Window {
 
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
     }
-
-    // private async void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
-    //     switch (e.Reason) {
-    //         case SessionSwitchReason.SessionLock:
-    //             if (_isPausedOrStopped) return;
-    //             _isPausedOrStopped = true;
-    //
-    //             try {
-    //                 await MonitorService.RecordSleepAsync(DateTime.Now);
-    //             } catch (Exception ex) {
-    //                 Debug.WriteLine($"停止処理エラー: {ex.Message}");
-    //             }
-    //             break;
-    //
-    //         case SessionSwitchReason.SessionUnlock:
-    //             if (!_isPausedOrStopped) return;
-    //             _isPausedOrStopped = false;
-    //
-    //             try {
-    //                 _monitorService.Start();
-    //                 await MonitorService.RecordWakeAsync(DateTime.Now);
-    //             } catch (Exception ex) {
-    //                 Debug.WriteLine($"再開処理エラー: {ex.Message}");
-    //             }
-    //             break;
-    //     }
-    // }
 
     private static void SetStartup() {
         try {

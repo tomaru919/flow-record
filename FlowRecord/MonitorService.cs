@@ -25,23 +25,16 @@ public class MonitorService {
     private bool _shutdownRecorded;
     private readonly SemaphoreSlim _shutdownLock = new(1, 1); // なぜRecordShutdownAsync関数のときだけロックするのか？
 
-    // pendingファイル（OSシャットダウン時にここへ保存）
-    private static string LogPath =>
+    private static string ShutdownLogPath =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "FlowRecord",
             "shutdown.txt"
         );
 
-    // スリープ時刻ファイル（DB書き込みが間に合わない場合のフォールバック）
-    private static string SleepLogPath =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FlowRecord",
-            "sleep.txt"
-        );
-
     public void Initialize() {
+        Directory.CreateDirectory(Path.GetDirectoryName(ShutdownLogPath)!);
+
         var envPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, ".env"));
         if (File.Exists(envPath)) Env.Load(envPath);
 
@@ -124,7 +117,7 @@ public class MonitorService {
     private async Task ApplyShutdownLogToLastBootRecordAsync() {
         DateTime? shutdownTime;
         try {
-            var readText = File.ReadAllLines(LogPath).Last();
+            var readText = File.ReadAllLines(ShutdownLogPath).Last();
             if (string.IsNullOrWhiteSpace(readText)) return;
             shutdownTime = DateTime.Parse(readText);
         } catch (FormatException ex) {
@@ -171,85 +164,13 @@ WHERE id = @id AND pc_name_id = @pc_name_id;";
 
                 // 成功したらログを消す（次回また同じ shutdown_time を上書きしないため）
                 if (affected > 0) {
-                    try { File.Delete(LogPath); } catch { }
+                    try { File.Delete(ShutdownLogPath); } catch { }
                 }
             }
         } catch (Exception ex) {
             Debug.WriteLine($"ApplyShutdownLogToLastBootRecordAsync error: {ex.Message}");
         }
     }
-
-    // public static async Task RecordSleepAsync(DateTime sleepTime) {
-    //     // ログファイルに記録
-    //     try {
-    //         Directory.CreateDirectory(Path.GetDirectoryName(SleepLogPath)!);
-    //         File.AppendAllText(SleepLogPath, $"SLEEP: {sleepTime:O}{Environment.NewLine}");
-    //     } catch (Exception ex) {
-    //         Debug.WriteLine($"sleep log write error: {ex.Message}");
-    //     }
-
-    //     // TODO: DB記録（イベント発火確認後に有効化）
-    //     await FlushCurrentWindowAsync(sleepTime);
-    //     var pcNameId = await EnsurePcNameIdAsync();
-    //     if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
-    //     try {
-    //         await using var conn = new NpgsqlConnection(connectionString);
-    //         await conn.OpenAsync();
-    //         const string query = @"
-    //     INSERT INTO sleep_wake (pc_name_id, sleep_time, created_at)
-    //     VALUES (@pc_name_id, @sleep_time, @created_at)";
-    //         await using var cmd = new NpgsqlCommand(query, conn);
-    //         cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
-    //         cmd.Parameters.AddWithValue("sleep_time", sleepTime);
-    //         cmd.Parameters.AddWithValue("created_at", DateTime.Now);
-    //         await cmd.ExecuteNonQueryAsync();
-    //     } catch (Exception ex) {
-    //         Debug.WriteLine($"RecordSleepAsync error: {ex.Message}");
-    //     }
-    //     await Task.CompletedTask;
-    // }
-
-    // public static async Task RecordWakeAsync(DateTime wakeTime) {
-    //     // ログファイルに記録
-    //     try {
-    //         Directory.CreateDirectory(Path.GetDirectoryName(SleepLogPath)!);
-    //         File.AppendAllText(SleepLogPath, $"WAKE:  {wakeTime:O}{Environment.NewLine}");
-    //     } catch (Exception ex) {
-    //         Debug.WriteLine($"wake log write error: {ex.Message}");
-    //     }
-
-    //     // TODO: DB記録（イベント発火確認後に有効化）
-    //     await FlushCurrentWindowAsync(wakeTime);
-    //     var pcNameId = await EnsurePcNameIdAsync();
-    //     if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
-    //     try {
-    //         await using var conn = new NpgsqlConnection(connectionString);
-    //         await conn.OpenAsync();
-    //         const string selectId = @"
-    //     SELECT id FROM sleep_wake
-    //     WHERE pc_name_id = @pc_name_id AND wake_time IS NULL
-    //     ORDER BY sleep_time DESC LIMIT 1";
-    //         long? lastId = null;
-    //         await using (var cmd = new NpgsqlCommand(selectId, conn)) {
-    //             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
-    //             var result = await cmd.ExecuteScalarAsync();
-    //             if (result != null && result != DBNull.Value) lastId = Convert.ToInt64(result);
-    //         }
-    //         if (!lastId.HasValue) return;
-    //         const string update = @"
-    //     UPDATE sleep_wake SET wake_time = @wake_time
-    //     WHERE id = @id AND pc_name_id = @pc_name_id";
-    //         await using (var cmd = new NpgsqlCommand(update, conn)) {
-    //             cmd.Parameters.AddWithValue("wake_time", wakeTime);
-    //             cmd.Parameters.AddWithValue("id", lastId.Value);
-    //             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
-    //             await cmd.ExecuteNonQueryAsync();
-    //         }
-    //     } catch (Exception ex) {
-    //         Debug.WriteLine($"RecordWakeAsync error: {ex.Message}");
-    //     }
-    //     await Task.CompletedTask;
-    // }
 
     private async Task FlushCurrentWindowAsync(DateTime endTime) {
         if (string.IsNullOrWhiteSpace(currentWindow)) return;
@@ -385,7 +306,7 @@ VALUES (@pc_name_id, @window_title, @start_time, @end_time, @created_at)";
             cmd.Parameters.AddWithValue("end_time", endTime);
             cmd.Parameters.AddWithValue("created_at", DateTime.Now);
             await cmd.ExecuteNonQueryAsync();
-        } catch (Exception ex) { Debug.WriteLine($"DB Error: {ex.Message}"); }
+        } catch (Exception ex) { Debug.WriteLine($"SaveActiveWindowRecordAsync DB Error: {ex.Message}"); }
     }
 
     private async Task<long?> CreateActiveWindowStartAsync(string windowTitle, DateTime startTime) {
@@ -406,7 +327,7 @@ RETURNING id";
             var result = await cmd.ExecuteScalarAsync();
             return result == null || result == DBNull.Value ? null : Convert.ToInt64(result);
         } catch (Exception ex) {
-            Debug.WriteLine($"DB Error: {ex.Message}");
+            Debug.WriteLine($"CreateActiveWindowStartAsync DB Error: {ex.Message}");
             return null;
         }
     }
@@ -425,7 +346,7 @@ WHERE id = @id AND end_time IS NULL";
             cmd.Parameters.AddWithValue("id", recordId);
             _ = await cmd.ExecuteNonQueryAsync();
         } catch (Exception ex) {
-            Debug.WriteLine($"DB Error: {ex.Message}");
+            Debug.WriteLine($"CloseActiveWindowAsync DB Error: {ex.Message}");
         }
     }
 
@@ -526,7 +447,7 @@ ORDER BY ds.date ASC";
             if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
             await using var conn = new NpgsqlConnection(connectionString);
             await conn.OpenAsync();
-            
+
             // 今日の0時から明日（今日+1日）の0時までの範囲で計算
             var today = DateTime.Today;
             var tomorrow = today.AddDays(1);
@@ -546,7 +467,7 @@ ORDER BY duration_hours DESC";
 
             var pcNameId = await EnsurePcNameIdAsync();
             if (!pcNameId.HasValue) return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
-            
+
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
             cmd.Parameters.AddWithValue("now", now);
