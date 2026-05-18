@@ -1,5 +1,7 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using FlowRecord.Monitor;
@@ -8,6 +10,26 @@ using System.Diagnostics;
 namespace FlowRecord;
 
 public partial class MainWindow : Window {
+    private const int WM_POWERBROADCAST = 0x0218;
+    private const int PBT_APMSUSPEND = 0x0004;
+    // PBT_APMRESUMEAUTOMATIC は復帰時に必ず1回送られる。
+    // PBT_APMRESUMESUSPEND はユーザー操作で復帰したときに追加で送られるため、使うと2回ログが出る。
+    private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
+    private const uint DEVICE_NOTIFY_WINDOW_HANDLE = 0;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr RegisterSuspendResumeNotification(IntPtr hRecipient, uint Flags);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterSuspendResumeNotification(IntPtr Handle);
+
+    // private static readonly string SleepLogPath = Path.Combine(
+    //     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    //     "FlowRecord",
+    //     "sleep.txt"
+    // );
+
+    private IntPtr _notificationHandle;
+
     private readonly MonitorService _monitorService;
 
     public bool IsExiting { get; set; } = false;
@@ -18,12 +40,62 @@ public partial class MainWindow : Window {
         InitializeComponent();
         SetStartup();
 
+        // Directory.CreateDirectory(Path.GetDirectoryName(SleepLogPath)!);
+
         _monitorService = new MonitorService();
         _monitorService.Initialize();
         _monitorService.Start();
 
         InitializeWebView();
+
+        // タスクトレイ常駐起動でウィンドウを Show しなくても HWND を生成し、
+        // OnSourceInitialized を発火させて WM_POWERBROADCAST のフックを有効化する
+        new WindowInteropHelper(this).EnsureHandle();
+
+        // Log("アプリ起動");
     }
+
+    protected override void OnSourceInitialized(EventArgs e) {
+        base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        var source = HwndSource.FromHwnd(hwnd);
+        source?.AddHook(WndProc);
+        _notificationHandle = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
+        if (msg == WM_POWERBROADCAST) {
+            switch (wParam.ToInt32()) {
+                case PBT_APMSUSPEND:
+                    // Log("スリープ開始");
+                    Debug.WriteLine("スリープ開始");
+                    break;
+                case PBT_APMRESUMEAUTOMATIC:
+                    // Log("スリープ復帰");
+                    Debug.WriteLine("スリープ復帰");
+                    break;
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    protected override void OnClosed(EventArgs e) {
+        if (_notificationHandle != IntPtr.Zero) {
+            UnregisterSuspendResumeNotification(_notificationHandle);
+            _notificationHandle = IntPtr.Zero;
+        }
+        base.OnClosed(e);
+    }
+
+    // private static void Log(string message) {
+    //     string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | {message}";
+    //     Debug.WriteLine(line);
+    //     try {
+    //         File.AppendAllText(SleepLogPath, line + Environment.NewLine);
+    //     } catch (Exception ex) {
+    //         Debug.WriteLine($"Sleep log write error: {ex.Message}");
+    //     }
+    // }
 
     private async void InitializeWebView() {
         await webView.EnsureCoreWebView2Async();
