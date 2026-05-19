@@ -34,7 +34,7 @@
 - [x] アクティブウインドウの内訳のグラフに24時間以上の表示がある
 - [ ] アクティブウインドウの内訳のグラフのスタイルを修正
 - [ ] なにもアプリを起動していない状態だとエクスプローラーがアクティブウインドウになる
-- [ ] パソコンのカバーを開閉するときのスリープとスリープ解除を記録するプログラムに問題があります。スリープしたときに新しいsleep_wakeのレコードが作られず、解除したときに作成されます。さらに解除した時刻がsleep_timeのカラムと一つ前のレコードのwake_timeのカラムに挿入されます。スリープするボタンを押したときは正常に動作します。修正してください。
+- [x] パソコンのカバーを開閉するときのスリープとスリープ解除を記録するプログラムに問題があります。スリープしたときに新しいsleep_wakeのレコードが作られず、解除したときに作成されます。さらに解除した時刻がsleep_timeのカラムと一つ前のレコードのwake_timeのカラムに挿入されます。スリープするボタンを押したときは正常に動作します。修正してください。
 - [x] create_atの時刻がおかしい(Supabase~.csvを参考)
 - [ ] DB Error: The operation has timed out
 - [ ] DB Error: Exception while reading from stream
@@ -59,4 +59,6 @@ cd frontend/
 npm run build
 ```
 
-claude --resume 7e8fdae8-e2b7-47e7-a82e-d5c346739003
+### 疑問
+- [ ] なぜ[MainWindow.xaml.cs](./FlowRecord/MainWindow.xaml.cs)の`new WindowInteropHelper(this).EnsureHandle();`を実行しないと`OnSourceInitialized`が発火しないのか？
+- [ ] `IntPtr`とはなにか？
