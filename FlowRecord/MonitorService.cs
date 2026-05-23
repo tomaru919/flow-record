@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using DotNetEnv;
 using Npgsql;
-using System.Collections.Generic;
 
 namespace FlowRecord.Monitor;
 
@@ -20,10 +19,10 @@ public class MonitorService {
     private readonly string pcName = Environment.MachineName;
     private CancellationTokenSource? _cts;
     private int? _pcNameId;
-    private long? _bootShutdownId; // ← Current_startup_id（起動行のID）
+    private long? _bootShutdownId;
     private long? _currentWindowRecordId;
     private bool _shutdownRecorded;
-    private readonly SemaphoreSlim _shutdownLock = new(1, 1); // なぜRecordShutdownAsync関数のときだけロックするのか？
+    private readonly SemaphoreSlim _shutdownLock = new(1, 1);
 
     private static string ShutdownLogPath =>
         Path.Combine(
@@ -73,7 +72,6 @@ public class MonitorService {
 
                 await MonitoringLoop(_cts.Token);
             } catch (Exception ex) {
-                // ここで落ちても監視ループは開始しない（DB前提アプリなので）
                 Debug.WriteLine($"MonitorService.Start error: {ex}");
             }
         });
@@ -162,7 +160,6 @@ WHERE id = @id AND pc_name_id = @pc_name_id;";
 
                 var affected = await cmd.ExecuteNonQueryAsync();
 
-                // 成功したらログを消す（次回また同じ shutdown_time を上書きしないため）
                 if (affected > 0) {
                     try { File.Delete(ShutdownLogPath); } catch { }
                 }
