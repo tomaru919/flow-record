@@ -20,13 +20,8 @@ public partial class MainWindow : Window {
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnregisterSuspendResumeNotification(IntPtr Handle);
 
-    private static readonly string SleepLogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "FlowRecord",
-        "sleep.txt"
-    );
-
     private IntPtr _notificationHandle;
+    private bool _isSleeping = false;
 
     private readonly MonitorService _monitorService;
 
@@ -38,8 +33,6 @@ public partial class MainWindow : Window {
         InitializeComponent();
         SetStartup();
 
-        Directory.CreateDirectory(Path.GetDirectoryName(SleepLogPath)!);
-
         _monitorService = new MonitorService();
         _monitorService.Initialize();
         _monitorService.Start();
@@ -49,8 +42,6 @@ public partial class MainWindow : Window {
         // タスクトレイ常駐起動でウィンドウを Show しなくても HWND を生成し、
         // OnSourceInitialized を発火させて WM_POWERBROADCAST のフックを有効化する
         new WindowInteropHelper(this).EnsureHandle();
-
-        Log("アプリ起動");
     }
 
     protected override void OnSourceInitialized(EventArgs e) {
@@ -65,12 +56,16 @@ public partial class MainWindow : Window {
         if (msg == WM_POWERBROADCAST) {
             switch (wParam.ToInt32()) {
                 case PBT_APMSUSPEND:
-                    Log("スリープ開始");
-                    Debug.WriteLine("スリープ開始");
+                    if (!_isSleeping) {
+                        _isSleeping = true;
+                        MonitorService.RecordSleep(DateTime.Now);
+                    }
                     break;
                 case PBT_APMRESUMEAUTOMATIC:
-                    Log("スリープ復帰");
-                    Debug.WriteLine("スリープ復帰");
+                    if (_isSleeping) {
+                        _isSleeping = false;
+                        _ = _monitorService.RecordWakeAsync(DateTime.Now);
+                    }
                     break;
             }
         }
@@ -83,16 +78,6 @@ public partial class MainWindow : Window {
             _notificationHandle = IntPtr.Zero;
         }
         base.OnClosed(e);
-    }
-
-    private static void Log(string message) {
-        string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} | {message}";
-        Debug.WriteLine(line);
-        try {
-            File.AppendAllText(SleepLogPath, line + Environment.NewLine);
-        } catch (Exception ex) {
-            Debug.WriteLine($"Sleep log write error: {ex.Message}");
-        }
     }
 
     private async void InitializeWebView() {

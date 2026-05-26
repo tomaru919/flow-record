@@ -31,6 +31,13 @@ public class MonitorService {
             "shutdown.txt"
         );
 
+    private static string SleepLogPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FlowRecord",
+            "sleep.txt"
+        );
+
     public void Initialize() {
         Directory.CreateDirectory(Path.GetDirectoryName(ShutdownLogPath)!);
 
@@ -103,6 +110,58 @@ public class MonitorService {
             } catch { return text.ToString(); }
         }
         return "";
+    }
+
+    // スリープ時：ファイルに時刻を書く（同期）。ネットワーク切断前に完了する必要があるため非同期不可
+    public static void RecordSleep(DateTime sleepTime) {
+        try {
+            File.WriteAllText(SleepLogPath, sleepTime.ToString("O"));
+            Debug.WriteLine($"Sleep time written to file: {sleepTime}");
+        } catch (Exception ex) {
+            Debug.WriteLine($"RecordSleep file write error: {ex.Message}");
+        }
+    }
+
+    // 復帰時：ファイルからスリープ時刻を読み、DBに1行挿入してファイルを削除
+    public async Task RecordWakeAsync(DateTime wakeTime) {
+        DateTime? sleepTime = null;
+        try {
+            if (File.Exists(SleepLogPath)) {
+                var text = File.ReadAllText(SleepLogPath).Trim();
+                if (DateTime.TryParse(text, out var parsed)) sleepTime = parsed;
+            }
+        } catch (Exception ex) {
+            Debug.WriteLine($"RecordWakeAsync file read error: {ex.Message}");
+        }
+
+        await InsertSleepWakeRecordAsync(sleepTime, wakeTime);
+
+        try {
+            if (File.Exists(SleepLogPath)) File.Delete(SleepLogPath);
+        } catch (Exception ex) {
+            Debug.WriteLine($"RecordWakeAsync file delete error: {ex.Message}");
+        }
+    }
+
+    private async Task InsertSleepWakeRecordAsync(DateTime? sleepTime, DateTime wakeTime) {
+        var pcNameId = await EnsurePcNameIdAsync();
+        if (!pcNameId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
+        try {
+            await using var conn = new NpgsqlConnection(connectionString);
+            await conn.OpenAsync();
+            const string query = @"
+INSERT INTO sleep_wake (pc_name_id, sleep_time, wake_time, created_at)
+VALUES (@pc_name_id, @sleep_time, @wake_time, @created_at)";
+            await using var cmd = new NpgsqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
+            cmd.Parameters.AddWithValue("sleep_time", (object?)sleepTime ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("wake_time", wakeTime);
+            cmd.Parameters.AddWithValue("created_at", DateTime.Now);
+            await cmd.ExecuteNonQueryAsync();
+            Debug.WriteLine($"Sleep/Wake recorded: sleep={sleepTime}, wake={wakeTime}");
+        } catch (Exception ex) {
+            Debug.WriteLine($"InsertSleepWakeRecordAsync error: {ex.Message}");
+        }
     }
 
     // Exitボタン用：DBへ shutdown_time を書く
