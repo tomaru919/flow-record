@@ -9,6 +9,7 @@ import {
   type TooltipItem,
 } from "chart.js"
 import { Bar } from "react-chartjs-2"
+import type { BootDuration } from "../types"
 
 ChartJS.register(
   CategoryScale,
@@ -18,11 +19,6 @@ ChartJS.register(
   Tooltip,
   Legend
 )
-
-interface BootDuration {
-  date: string
-  total_hours: number
-}
 
 interface DailyActivityChartProps {
   bootDurations: BootDuration[]
@@ -44,6 +40,9 @@ const DailyActivityChart = ({ bootDurations }: DailyActivityChartProps) => {
       }
     ]
   }
+
+  const maxHours = Math.max(...bootDurations.map(d => d.total_hours), 0)
+  const stepSize = maxHours > 1.5 ? 30 / 60 : 10 / 60
 
   const chartOptions = {
     responsive: true,
@@ -101,7 +100,15 @@ const DailyActivityChart = ({ bootDurations }: DailyActivityChartProps) => {
           font: {
             family: "system-ui, -apple-system, sans-serif",
           },
-          callback: (value: string | number) => `${value}h`
+          stepSize,
+          callback: (value: string | number) => {
+            const totalMinutes = Math.round((value as number) * 60)
+            const hours = Math.floor(totalMinutes / 60)
+            const minutes = totalMinutes % 60
+            if (hours === 0) return `${minutes}分`
+            if (minutes === 0) return `${hours}時間`
+            return `${hours}時間${minutes}分`
+          }
         }
       }
     }

@@ -7,6 +7,7 @@ import {
   type TooltipItem,
 } from "chart.js"
 import { Pie } from "react-chartjs-2"
+import type { ActiveWindowDuration } from "../types"
 
 ChartJS.register(
   ArcElement,
@@ -14,11 +15,6 @@ ChartJS.register(
   Legend,
   Title
 )
-
-interface ActiveWindowDuration {
-  window_title: string
-  duration_hours: number
-}
 
 interface ActiveWindowChartProps {
   activeWindowDurations: ActiveWindowDuration[]
@@ -70,13 +66,17 @@ const ActiveWindowChart = ({ activeWindowDurations }: ActiveWindowChartProps) =>
         callbacks: {
           label: (context: TooltipItem<'pie'>) => {
             const value = context.raw as number
-            const totalMinutes = Math.round(value * 60)
-            const hours = Math.floor(totalMinutes / 60)
-            const minutes = totalMinutes % 60
-            
             const total = (context.dataset.data as number[]).reduce((a, b) => a + b, 0)
             const percentage = ((value / total) * 100).toFixed(1)
-            
+
+            const totalMinutes = Math.round(value * 60)
+            if (totalMinutes < 1) {
+              const totalSeconds = Math.round(value * 3600)
+              return ` ${totalSeconds}秒 (${percentage}%)`
+            }
+
+            const hours = Math.floor(totalMinutes / 60)
+            const minutes = totalMinutes % 60
             return ` ${hours}時間${minutes}分 (${percentage}%)`
           }
         }
