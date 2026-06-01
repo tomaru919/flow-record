@@ -5,7 +5,6 @@ using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using FlowRecord.Monitor;
-using System.Diagnostics;
 
 namespace FlowRecord;
 
@@ -15,10 +14,14 @@ public partial class MainWindow : Window {
     private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
     private const uint DEVICE_NOTIFY_WINDOW_HANDLE = 0;
 
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr RegisterSuspendResumeNotification(IntPtr hRecipient, uint Flags);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnregisterSuspendResumeNotification(IntPtr Handle);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     private IntPtr _notificationHandle;
     private bool _isSleeping = false;
@@ -42,6 +45,8 @@ public partial class MainWindow : Window {
         // タスクトレイ常駐起動でウィンドウを Show しなくても HWND を生成し、
         // OnSourceInitialized を発火させて WM_POWERBROADCAST のフックを有効化する
         new WindowInteropHelper(this).EnsureHandle();
+
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
     protected override void OnSourceInitialized(EventArgs e) {
@@ -50,6 +55,7 @@ public partial class MainWindow : Window {
         var source = HwndSource.FromHwnd(hwnd);
         source?.AddHook(WndProc);
         _notificationHandle = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
+        ApplyTitleBarTheme(hwnd);
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
@@ -73,6 +79,7 @@ public partial class MainWindow : Window {
     }
 
     protected override void OnClosed(EventArgs e) {
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         if (_notificationHandle != IntPtr.Zero) {
             UnregisterSuspendResumeNotification(_notificationHandle);
             _notificationHandle = IntPtr.Zero;
@@ -126,6 +133,23 @@ public partial class MainWindow : Window {
         _isPausedOrStopped = true;
 
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
+    }
+
+    private static bool IsSystemDarkMode() {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        return (int)(key?.GetValue("AppsUseLightTheme") ?? 1) == 0;
+    }
+
+    private static void ApplyTitleBarTheme(IntPtr hwnd) {
+        int darkFlag = IsSystemDarkMode() ? 1 : 0;
+        _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkFlag, sizeof(int));
+    }
+
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) {
+        if (e.Category == UserPreferenceCategory.General) {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero) Dispatcher.Invoke(() => ApplyTitleBarTheme(hwnd));
+        }
     }
 
     private static void SetStartup() {
