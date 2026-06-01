@@ -3,7 +3,6 @@ import {
   ArcElement,
   Tooltip,
   Legend,
-  Title,
   type TooltipItem,
 } from "chart.js"
 import { Pie } from "react-chartjs-2"
@@ -12,8 +11,7 @@ import type { ActiveWindowDuration } from "../types"
 ChartJS.register(
   ArcElement,
   Tooltip,
-  Legend,
-  Title
+  Legend
 )
 
 interface ActiveWindowChartProps {
@@ -53,15 +51,6 @@ const ActiveWindowChart = ({ activeWindowDurations }: ActiveWindowChartProps) =>
           }
         }
       },
-      title: {
-        display: true,
-        text: '今日のアクティブウィンドウ内訳',
-        color: '#888',
-        font: {
-          size: 14,
-          weight: 'normal' as const
-        }
-      },
       tooltip: {
         callbacks: {
           label: (context: TooltipItem<'pie'>) => {
@@ -86,6 +75,7 @@ const ActiveWindowChart = ({ activeWindowDurations }: ActiveWindowChartProps) =>
 
   return (
     <div className="chart-wrapper pie-chart">
+      <p className="chart-title">今日のアクティブウィンドウ内訳</p>
       <Pie data={pieChartData} options={pieChartOptions} />
     </div>
   )

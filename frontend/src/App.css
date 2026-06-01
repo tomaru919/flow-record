@@ -43,6 +43,14 @@
   flex: 0.8;
 }
 
+.chart-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: normal;
+  color: #888;
+  text-align: center;
+}
+
 @media (max-width: 900px) {
   .chart-wrapper {
     flex: 1 1 100%;
