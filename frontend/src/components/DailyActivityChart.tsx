@@ -51,15 +51,6 @@ const DailyActivityChart = ({ bootDurations }: DailyActivityChartProps) => {
       legend: {
         display: false,
       },
-      title: {
-        display: true,
-        text: '過去7日間の稼働時間',
-        color: '#888',
-        font: {
-          size: 14,
-          weight: 'normal' as const
-        }
-      },
       tooltip: {
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
         padding: 12,
@@ -116,7 +107,10 @@ const DailyActivityChart = ({ bootDurations }: DailyActivityChartProps) => {
 
   return (
     <div className="chart-wrapper bar-chart">
-      <Bar data={chartData} options={chartOptions} />
+      <p className="chart-title">過去7日間の稼働時間</p>
+      <div className="pie-canvas-wrapper">
+        <Bar data={chartData} options={chartOptions} />
+      </div>
     </div>
   )
 }

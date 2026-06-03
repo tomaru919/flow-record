@@ -37,6 +37,14 @@
   border-radius: 12px;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
   margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pie-canvas-wrapper {
+  /* position: relative; */
+  flex: 1;
+  /* min-height: 0; */
 }
 
 .pie-chart {

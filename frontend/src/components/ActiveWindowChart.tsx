@@ -76,7 +76,9 @@ const ActiveWindowChart = ({ activeWindowDurations }: ActiveWindowChartProps) =>
   return (
     <div className="chart-wrapper pie-chart">
       <p className="chart-title">今日のアクティブウィンドウ内訳</p>
-      <Pie data={pieChartData} options={pieChartOptions} />
+      <div className="pie-canvas-wrapper">
+        <Pie data={pieChartData} options={pieChartOptions} />
+      </div>
     </div>
   )
 }
