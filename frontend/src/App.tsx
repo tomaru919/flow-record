@@ -4,7 +4,7 @@ import DailyActivityChart from './components/DailyActivityChart'
 import ActiveWindowChart from './components/ActiveWindowChart'
 import type { Record, BootDuration, ActiveWindowDuration, WebViewMessageEvent } from './types'
 
-function App() {
+export default function App() {
   const [records, setRecords] = useState<Record[]>([])
   const [bootDurations, setBootDurations] = useState<BootDuration[]>([])
   const [activeWindowDurations, setActiveWindowDurations] = useState<ActiveWindowDuration[]>([])
@@ -80,5 +80,3 @@ function App() {
     </div>
   )
 }
-
-export default App

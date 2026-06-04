@@ -23,7 +23,7 @@ const pieColors = [
   '#ff9f40', '#c9cbcf', '#70a1ff', '#7bed9f', '#ff4757'
 ]
 
-const ActiveWindowChart = ({ activeWindowDurations }: ActiveWindowChartProps) => {
+export default function ActiveWindowChart({ activeWindowDurations }: ActiveWindowChartProps) {
   const pieChartData = {
     labels: activeWindowDurations.map(d => d.window_title),
     datasets: [
@@ -82,5 +82,3 @@ const ActiveWindowChart = ({ activeWindowDurations }: ActiveWindowChartProps) =>
     </div>
   )
 }
-
-export default ActiveWindowChart

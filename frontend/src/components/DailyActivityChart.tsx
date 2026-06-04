@@ -24,7 +24,7 @@ interface DailyActivityChartProps {
   bootDurations: BootDuration[]
 }
 
-const DailyActivityChart = ({ bootDurations }: DailyActivityChartProps) => {
+export default function DailyActivityChart({ bootDurations }: DailyActivityChartProps) {
   const chartData = {
     labels: bootDurations.map(d => {
       const date = new Date(d.date);
@@ -114,5 +114,3 @@ const DailyActivityChart = ({ bootDurations }: DailyActivityChartProps) => {
     </div>
   )
 }
-
-export default DailyActivityChart
