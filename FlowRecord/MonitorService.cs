@@ -12,6 +12,7 @@ public class MonitorService {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
     private string currentWindow = "";
     private DateTime windowStartTime = DateTime.Now;
@@ -88,11 +89,17 @@ public class MonitorService {
         while (!token.IsCancellationRequested) {
             try {
                 string activeWindow = GetActiveWindowTitle();
-                if (activeWindow != currentWindow && !string.IsNullOrEmpty(activeWindow)) {
-                    await CloseCurrentWindowAsync(DateTime.Now);
-                    currentWindow = activeWindow;
-                    windowStartTime = DateTime.Now;
-                    _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
+                if (activeWindow != currentWindow) {
+                    if (!string.IsNullOrEmpty(currentWindow)) {
+                        await CloseCurrentWindowAsync(DateTime.Now);
+                        currentWindow = "";
+                        _currentWindowRecordId = null;
+                    }
+                    if (!string.IsNullOrEmpty(activeWindow)) {
+                        currentWindow = activeWindow;
+                        windowStartTime = DateTime.Now;
+                        _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
+                    }
                 }
                 await Task.Delay(1000, token);
             } catch (TaskCanceledException) { break; } catch (Exception ex) { Debug.WriteLine($"Error: {ex.Message}"); }
@@ -101,6 +108,9 @@ public class MonitorService {
 
     private static string GetActiveWindowTitle() {
         IntPtr handle = GetForegroundWindow();
+        var className = new StringBuilder(256);
+        GetClassName(handle, className, 256);
+        if (className.ToString() is "Progman" or "WorkerW") return "";
         StringBuilder text = new(256);
         if (GetWindowText(handle, text, 256) > 0) {
             _ = GetWindowThreadProcessId(handle, out uint processId);
