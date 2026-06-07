@@ -109,7 +109,7 @@ public class MonitorService {
     private static string GetActiveWindowTitle() {
         IntPtr handle = GetForegroundWindow();
         var className = new StringBuilder(256);
-        GetClassName(handle, className, 256);
+        _ = GetClassName(handle, className, 256);
         if (className.ToString() is "Progman" or "WorkerW") return "";
         StringBuilder text = new(256);
         if (GetWindowText(handle, text, 256) > 0) {
