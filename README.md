@@ -36,7 +36,7 @@
 - [x] パソコンのカバーを開閉するときのスリープとスリープ解除を記録するプログラムに問題があります。スリープしたときに新しいsleep_wakeのレコードが作られず、解除したときに作成されます。さらに解除した時刻がsleep_timeのカラムと一つ前のレコードのwake_timeのカラムに挿入されます。スリープするボタンを押したときは正常に動作します。修正してください。
 - [x] create_atの時刻がおかしい(Supabase~.csvを参考)
 - [ ] DB Error: The operation has timed out
-- [ ] DB Error: Exception while reading from stream
+- [x] DB Error: Exception while reading from stream
 - [x] 環境変数の設定
 - [x] スリープとスリープ解除を記録するときはログファイルに記録して、スリープ解除したときにデータベースに保存する
 - [x] ActiveWindowChartグラフの右側に今まで表示したウインドウの一覧が表示されているが、多すぎると他のテキストと被る
