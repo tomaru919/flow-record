@@ -134,6 +134,7 @@ public class MonitorService {
 
     // 復帰時：ファイルからスリープ時刻を読み、DBに1行挿入してファイルを削除
     public async Task RecordWakeAsync(DateTime wakeTime) {
+        NpgsqlConnection.ClearAllPools();
         DateTime? sleepTime = null;
         try {
             if (File.Exists(SleepLogPath)) {
