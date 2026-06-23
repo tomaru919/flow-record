@@ -113,7 +113,7 @@ public class MonitorService {
         if (className.ToString() is "Progman" or "WorkerW") return "";
         StringBuilder text = new(256);
         if (GetWindowText(handle, text, 256) > 0) {
-            _ = GetWindowThreadProcessId(handle, out uint processId);
+            _ = GetWindowThreadProcessId(handle, out var processId);
             try {
                 Process process = Process.GetProcessById((int)processId);
                 return process.ProcessName;

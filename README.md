@@ -60,9 +60,5 @@ cd frontend/
 npm run build
 ```
 
-### 疑問
-- [ ] なぜ[MainWindow.xaml.cs](./FlowRecord/MainWindow.xaml.cs)の`new WindowInteropHelper(this).EnsureHandle();`を実行しないと`OnSourceInitialized`が発火しないのか？
-- [ ] `IntPtr`とはなにか？
-
 ### claude code
 claude --resume 70bb0693-ffd9-4be3-bfe0-ab0b391d530f
