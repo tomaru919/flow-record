@@ -110,8 +110,10 @@ public partial class MainWindow : Window {
         if (message == "getRecords") {
             var json = await _monitorService.GetRecordsJsonAsync();
             webView.CoreWebView2.PostWebMessageAsJson(json);
-        } else if (message == "getBootDurations") {
-            var json = await _monitorService.GetDailyBootDurationJsonAsync();
+        } else if (message != null && message.StartsWith("getBootDurations")) {
+            var parts = message.Split(':');
+            var weekOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;
+            var json = await _monitorService.GetDailyBootDurationJsonAsync(weekOffset);
             webView.CoreWebView2.PostWebMessageAsJson(json);
         } else if (message == "getActiveWindowDurations") {
             var json = await _monitorService.GetActiveWindowDurationJsonAsync();

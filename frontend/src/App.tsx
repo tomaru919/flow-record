@@ -8,15 +8,35 @@ export default function App() {
   const [records, setRecords] = useState<Record[]>([])
   const [bootDurations, setBootDurations] = useState<BootDuration[]>([])
   const [activeWindowDurations, setActiveWindowDurations] = useState<ActiveWindowDuration[]>([])
-  
+  const [weekOffset, setWeekOffset] = useState(0)
+
+  const requestBootDurations = (offset: number) => {
+    if (window.chrome?.webview) {
+      window.chrome.webview.postMessage(`getBootDurations:${offset}`)
+    }
+  }
+
   const refreshData = () => {
     if (window.chrome?.webview) {
       window.chrome.webview.postMessage('getRecords')
-      window.chrome.webview.postMessage('getBootDurations')
+      requestBootDurations(weekOffset)
       window.chrome.webview.postMessage('getActiveWindowDurations')
     } else {
       console.warn("Not running in WebView2")
     }
+  }
+
+  const handlePrevWeek = () => {
+    const newOffset = weekOffset - 1
+    setWeekOffset(newOffset)
+    requestBootDurations(newOffset)
+  }
+
+  const handleNextWeek = () => {
+    if (weekOffset >= 0) return
+    const newOffset = weekOffset + 1
+    setWeekOffset(newOffset)
+    requestBootDurations(newOffset)
   }
 
   useEffect(() => {
@@ -25,13 +45,10 @@ export default function App() {
         const message = event.data
         
         if (message.type === 'records') {
-          console.log('Received records:', message.data)
           setRecords(message.data)
         } else if (message.type === 'bootDurations') {
-          console.log('Received boot durations:', message.data)
           setBootDurations(message.data)
         } else if (message.type === 'activeWindowDurations') {
-          console.log('Received active window durations:', message.data)
           setActiveWindowDurations(message.data)
         }
       }
@@ -43,6 +60,7 @@ export default function App() {
         window.chrome?.webview?.removeEventListener('message', handleMessage)
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -53,7 +71,12 @@ export default function App() {
       </header>
 
       <div className="charts-container">
-        <DailyActivityChart bootDurations={bootDurations} />
+        <DailyActivityChart
+          bootDurations={bootDurations}
+          weekOffset={weekOffset}
+          onPrevWeek={handlePrevWeek}
+          onNextWeek={handleNextWeek}
+        />
         <ActiveWindowChart activeWindowDurations={activeWindowDurations} />
       </div>
       

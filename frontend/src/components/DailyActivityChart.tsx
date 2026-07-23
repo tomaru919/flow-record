@@ -22,13 +22,27 @@ ChartJS.register(
 
 interface DailyActivityChartProps {
   bootDurations: BootDuration[]
+  weekOffset: number
+  onPrevWeek: () => void
+  onNextWeek: () => void
 }
 
-export default function DailyActivityChart({ bootDurations }: DailyActivityChartProps) {
+const getWeekRangeLabel = (weekOffset: number) => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const sunday = new Date(today)
+  sunday.setDate(today.getDate() - today.getDay() + weekOffset * 7)
+  const saturday = new Date(sunday)
+  saturday.setDate(sunday.getDate() + 6)
+  const format = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
+  return `${format(sunday)} (日) 〜 ${format(saturday)} (土)`
+}
+
+export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWeek, onNextWeek }: DailyActivityChartProps) {
   const chartData = {
     labels: bootDurations.map(d => {
-      const date = new Date(d.date);
-      return `${date.getMonth() + 1}/${date.getDate()}`;
+      const date = new Date(d.date)
+      return `${date.getMonth() + 1}/${date.getDate()}`
     }),
     datasets: [
       {
@@ -107,7 +121,11 @@ export default function DailyActivityChart({ bootDurations }: DailyActivityChart
 
   return (
     <div className="chart-wrapper bar-chart">
-      <p className="chart-title">過去7日間の稼働時間</p>
+      <div className="week-nav">
+        <button className="week-nav-button" onClick={onPrevWeek}>{'<'}</button>
+        <p className="chart-title">{getWeekRangeLabel(weekOffset)}</p>
+        <button className="week-nav-button" onClick={onNextWeek} disabled={weekOffset >= 0}>{'>'}</button>
+      </div>
       <div className="pie-canvas-wrapper">
         <Bar data={chartData} options={chartOptions} />
       </div>

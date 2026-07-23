@@ -467,7 +467,7 @@ LIMIT 100";
         } catch { return "{\"type\":\"records\",\"data\":[]}"; }
     }
 
-    public async Task<string> GetDailyBootDurationJsonAsync() {
+    public async Task<string> GetDailyBootDurationJsonAsync(int weekOffset = 0) {
         try {
             if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"bootDurations\",\"data\":[]}";
             await using var conn = new NpgsqlConnection(connectionString);
@@ -482,7 +482,7 @@ SELECT
         ))
     END), 0) / 3600 AS total_hours
 FROM (
-    SELECT (@today - (i || ' day')::interval)::date AS date
+    SELECT (@week_start + (i || ' day')::interval)::date AS date
     FROM generate_series(0, 6) i
 ) ds
 LEFT JOIN boot_shutdown bs ON DATE(bs.boot_time) = ds.date AND bs.pc_name_id = @pc_name_id
@@ -490,10 +490,16 @@ GROUP BY ds.date
 ORDER BY ds.date ASC";
             var pcNameId = await EnsurePcNameIdAsync();
             if (!pcNameId.HasValue) return "{\"type\":\"bootDurations\",\"data\":[]}";
+
+            // 日曜日始まりの週の開始日を計算し、weekOffset 週分ずらす
+            var today = DateTime.Today;
+            var currentWeekSunday = today.AddDays(-(int)today.DayOfWeek);
+            var weekStart = currentWeekSunday.AddDays(weekOffset * 7);
+
             await using var cmd = new NpgsqlCommand(query, conn);
             cmd.Parameters.AddWithValue("pc_name_id", pcNameId.Value);
             cmd.Parameters.AddWithValue("now", DateTime.Now);
-            cmd.Parameters.AddWithValue("today", DateTime.Today);
+            cmd.Parameters.AddWithValue("week_start", weekStart);
             var reader = await cmd.ExecuteReaderAsync();
             var results = new List<object>();
             while (await reader.ReadAsync()) {
