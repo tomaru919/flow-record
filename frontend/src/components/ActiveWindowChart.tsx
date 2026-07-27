@@ -23,12 +23,31 @@ const pieColors = [
   '#ff9f40', '#c9cbcf', '#70a1ff', '#7bed9f', '#ff4757'
 ]
 
+const OTHER_THRESHOLD = 0.03
+
+const groupMinorWindows = (durations: ActiveWindowDuration[]) => {
+  const total = durations.reduce((sum, d) => sum + d.duration_hours, 0)
+  if (total === 0) return durations
+
+  const sorted = [...durations].sort((a, b) => b.duration_hours - a.duration_hours)
+  const major = sorted.filter(d => d.duration_hours / total >= OTHER_THRESHOLD)
+  const minor = sorted.filter(d => d.duration_hours / total < OTHER_THRESHOLD)
+
+  if (minor.length === 0) return major
+  if (minor.length === 1) return sorted
+
+  const otherHours = minor.reduce((sum, d) => sum + d.duration_hours, 0)
+  return [...major, { window_title: 'その他', duration_hours: otherHours }]
+}
+
 export default function ActiveWindowChart({ activeWindowDurations }: ActiveWindowChartProps) {
+  const groupedDurations = groupMinorWindows(activeWindowDurations)
+
   const pieChartData = {
-    labels: activeWindowDurations.map(d => d.window_title),
+    labels: groupedDurations.map(d => d.window_title),
     datasets: [
       {
-        data: activeWindowDurations.map(d => d.duration_hours),
+        data: groupedDurations.map(d => d.duration_hours),
         backgroundColor: pieColors,
         borderColor: 'transparent',
         hoverOffset: 4
