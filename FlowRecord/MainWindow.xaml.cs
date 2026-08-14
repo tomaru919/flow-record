@@ -62,6 +62,7 @@ public partial class MainWindow : Window {
         if (msg == WM_POWERBROADCAST) {
             switch (wParam.ToInt32()) {
                 case PBT_APMSUSPEND:
+                    _monitorService.CancelPendingWake();
                     if (!_isSleeping) {
                         _isSleeping = true;
                         MonitorService.RecordSleep(DateTime.Now);
@@ -70,7 +71,7 @@ public partial class MainWindow : Window {
                 case PBT_APMRESUMEAUTOMATIC:
                     if (_isSleeping) {
                         _isSleeping = false;
-                        _ = _monitorService.RecordWakeAsync(DateTime.Now);
+                        _monitorService.ScheduleWakeConfirmation(DateTime.Now);
                     }
                     break;
             }

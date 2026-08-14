@@ -123,13 +123,43 @@ public class MonitorService {
     }
 
     // スリープ時：ファイルに時刻を書く（同期）。ネットワーク切断前に完了する必要があるため非同期不可
+    // Modern Standbyでは短時間のsuspend/resumeが連続することがあるため、
+    // 既にファイルが存在する（＝まだ本復帰が確定していない）場合は最初のスリープ時刻を保持する
     public static void RecordSleep(DateTime sleepTime) {
         try {
+            if (File.Exists(SleepLogPath)) return;
             File.WriteAllText(SleepLogPath, sleepTime.ToString("O"));
             Debug.WriteLine($"Sleep time written to file: {sleepTime}");
         } catch (Exception ex) {
             Debug.WriteLine($"RecordSleep file write error: {ex.Message}");
         }
+    }
+
+    private CancellationTokenSource? _wakeConfirmCts;
+    private static readonly TimeSpan WakeConfirmDelay = TimeSpan.FromSeconds(5);
+
+    // 直前の復帰確定待ちをキャンセルする（再度スリープした＝一時的な復帰だった場合に呼ぶ）
+    public void CancelPendingWake() {
+        _wakeConfirmCts?.Cancel();
+        _wakeConfirmCts = null;
+    }
+
+    // 復帰イベントを即確定せず、一定時間後も再スリープしていなければ本復帰とみなしてDBへ書き込む
+    public void ScheduleWakeConfirmation(DateTime wakeTime) {
+        _wakeConfirmCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _wakeConfirmCts = cts;
+        _ = ConfirmWakeAfterDelayAsync(wakeTime, cts.Token);
+    }
+
+    private async Task ConfirmWakeAfterDelayAsync(DateTime wakeTime, CancellationToken token) {
+        try {
+            await Task.Delay(WakeConfirmDelay, token);
+        } catch (TaskCanceledException) {
+            return;
+        }
+        if (token.IsCancellationRequested) return;
+        await RecordWakeAsync(wakeTime);
     }
 
     // 復帰時：ファイルからスリープ時刻を読み、DBに1行挿入してファイルを削除
