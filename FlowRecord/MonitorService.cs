@@ -145,7 +145,10 @@ public class MonitorService {
     }
 
     // 復帰イベントを即確定せず、一定時間後も再スリープしていなければ本復帰とみなしてDBへ書き込む
+    // ただしコネクションプールのクリアは、監視ループが復帰直後に古い接続を掴んで
+    // 「Exception while reading from stream」を起こさないよう、復帰検知時点で即実行する
     public void ScheduleWakeConfirmation(DateTime wakeTime) {
+        NpgsqlConnection.ClearAllPools();
         _wakeConfirmCts?.Cancel();
         var cts = new CancellationTokenSource();
         _wakeConfirmCts = cts;
@@ -164,7 +167,6 @@ public class MonitorService {
 
     // 復帰時：ファイルからスリープ時刻を読み、DBに1行挿入してファイルを削除
     public async Task RecordWakeAsync(DateTime wakeTime) {
-        NpgsqlConnection.ClearAllPools();
         DateTime? sleepTime = null;
         try {
             if (File.Exists(SleepLogPath)) {
