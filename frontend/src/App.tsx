@@ -50,6 +50,8 @@ export default function App() {
           setBootDurations(message.data)
         } else if (message.type === 'activeWindowDurations') {
           setActiveWindowDurations(message.data)
+        } else if (message.type === 'refresh') {
+          refreshData()
         }
       }
 

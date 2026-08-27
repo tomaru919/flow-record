@@ -106,6 +106,11 @@ public partial class MainWindow : Window {
         webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
     }
 
+    // トレイアイコンからウィンドウを開いたときにフロント側のデータを再取得させる
+    public void RequestRefresh() {
+        webView.CoreWebView2?.PostWebMessageAsJson("{\"type\":\"refresh\"}");
+    }
+
     private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e) {
         var message = e.TryGetWebMessageAsString();
         if (message == "getRecords") {

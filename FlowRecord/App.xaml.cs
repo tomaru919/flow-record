@@ -78,6 +78,7 @@ public partial class App : System.Windows.Application {
         _mainWindow.Show();
         _mainWindow.WindowState = WindowState.Normal;
         _mainWindow.Activate();
+        _mainWindow.RequestRefresh();
     }
 
     // Exitボタンは時間があるので、従来どおりDBへ確実に書く
