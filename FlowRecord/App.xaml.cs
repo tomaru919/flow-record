@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.Windows;
-using System.IO;
 
 namespace FlowRecord;
 
@@ -8,35 +7,6 @@ namespace FlowRecord;
 /// Interaction logic for App.xaml
 /// </summary>
 public partial class App : System.Windows.Application {
-    private static string LogPath =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FlowRecord",
-            "shutdown.txt"
-        );
-
-    private static void AppendLine(string line) {
-        try {
-            var dir = Path.GetDirectoryName(LogPath)!;
-            Directory.CreateDirectory(dir);
-
-            using var fs = new FileStream(
-                LogPath,
-                FileMode.Append,
-                FileAccess.Write,
-                FileShare.Read,
-                bufferSize: 4096,
-                options: FileOptions.WriteThrough
-            );
-            using var sw = new StreamWriter(fs);
-            sw.WriteLine(line);
-            sw.Flush();
-            fs.Flush(true);
-        } catch {
-            Debug.WriteLine("シャットダウンログの保存に失敗");
-        }
-    }
-
     private NotifyIcon? _notifyIcon;
     private MainWindow? _mainWindow;
 
@@ -110,7 +80,7 @@ public partial class App : System.Windows.Application {
     }
 
     private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e) {
-        AppendLine($"{DateTime.Now}");
+        _mainWindow?.RecordShutdownSync(DateTime.Now);
 
         if (_mainWindow == null) return;
 

@@ -65,7 +65,7 @@ public partial class MainWindow : Window {
                     _monitorService.CancelPendingWake();
                     if (!_isSleeping) {
                         _isSleeping = true;
-                        MonitorService.RecordSleep(DateTime.Now);
+                        _monitorService.RecordSleep(DateTime.Now);
                     }
                     break;
                 case PBT_APMRESUMEAUTOMATIC:
@@ -141,6 +141,11 @@ public partial class MainWindow : Window {
         _isPausedOrStopped = true;
 
         await _monitorService.RecordShutdownAndStopAsync(shutdownTime);
+    }
+
+    // OSシャットダウン/ログオフ通知用：DBへ shutdown_time を直接書く（同期）
+    public void RecordShutdownSync(DateTime shutdownTime) {
+        _monitorService.RecordShutdownSync(shutdownTime);
     }
 
     private static bool IsSystemDarkMode() {
