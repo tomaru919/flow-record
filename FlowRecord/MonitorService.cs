@@ -184,7 +184,7 @@ SELECT last_insert_rowid();";
     }
 
     // 復帰確定時：スリープ時に作成した行の wake_time を直接更新する
-    public async Task RecordWakeAsync(DateTime wakeTime) {
+    private async Task RecordWakeAsync(DateTime wakeTime) {
         if (!_sleepWakeId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
         try {
             await using var conn = new SqliteConnection(connectionString);

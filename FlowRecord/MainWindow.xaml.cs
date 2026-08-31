@@ -12,18 +12,35 @@ public partial class MainWindow : Window {
     private const int WM_POWERBROADCAST = 0x0218;
     private const int PBT_APMSUSPEND = 0x0004;
     private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
+    private const int PBT_POWERSETTINGCHANGE = 0x8013;
     private const uint DEVICE_NOTIFY_WINDOW_HANDLE = 0;
 
+    // Modern Standby (S0 Low Power Idle) 専用機では PBT_APMSUSPEND/RESUMEAUTOMATIC が届かないため、
+    // Microsoft推奨のGUID_SYSTEM_AWAYMODE電源設定通知を併用してスリープ/復帰を検知する
+    private static readonly Guid GUID_SYSTEM_AWAYMODE = new("98a7f580-01f7-48aa-9c0f-44352c29e5c0");
+
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POWERBROADCAST_SETTING {
+        public Guid PowerSetting;
+        public uint DataLength;
+        public byte Data;
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr RegisterSuspendResumeNotification(IntPtr hRecipient, uint Flags);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnregisterSuspendResumeNotification(IntPtr Handle);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr RegisterPowerSettingNotification(IntPtr hRecipient, ref Guid PowerSettingGuid, uint Flags);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterPowerSettingNotification(IntPtr Handle);
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     private IntPtr _notificationHandle;
+    private IntPtr _awayModeNotificationHandle;
     private bool _isSleeping = false;
 
     private readonly MonitorService _monitorService;
@@ -55,23 +72,44 @@ public partial class MainWindow : Window {
         var source = HwndSource.FromHwnd(hwnd);
         source?.AddHook(WndProc);
         _notificationHandle = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
+        var awayModeGuid = GUID_SYSTEM_AWAYMODE;
+        _awayModeNotificationHandle = RegisterPowerSettingNotification(hwnd, ref awayModeGuid, DEVICE_NOTIFY_WINDOW_HANDLE);
         ApplyTitleBarTheme(hwnd);
+    }
+
+    private void HandleSuspend() {
+        _monitorService.CancelPendingWake();
+        if (!_isSleeping) {
+            _isSleeping = true;
+            _monitorService.RecordSleep(DateTime.Now);
+        }
+    }
+
+    private void HandleResume() {
+        if (_isSleeping) {
+            _isSleeping = false;
+            _monitorService.ScheduleWakeConfirmation(DateTime.Now);
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
         if (msg == WM_POWERBROADCAST) {
             switch (wParam.ToInt32()) {
                 case PBT_APMSUSPEND:
-                    _monitorService.CancelPendingWake();
-                    if (!_isSleeping) {
-                        _isSleeping = true;
-                        _monitorService.RecordSleep(DateTime.Now);
-                    }
+                    HandleSuspend();
                     break;
                 case PBT_APMRESUMEAUTOMATIC:
-                    if (_isSleeping) {
-                        _isSleeping = false;
-                        _monitorService.ScheduleWakeConfirmation(DateTime.Now);
+                    HandleResume();
+                    break;
+                case PBT_POWERSETTINGCHANGE:
+                    var setting = Marshal.PtrToStructure<POWERBROADCAST_SETTING>(lParam);
+                    if (setting.PowerSetting == GUID_SYSTEM_AWAYMODE) {
+                        // Data == 1: away modeに入る（スリープ開始）, 0: away modeを抜ける（復帰）
+                        if (setting.Data == 1) {
+                            HandleSuspend();
+                        } else {
+                            HandleResume();
+                        }
                     }
                     break;
             }
@@ -84,6 +122,10 @@ public partial class MainWindow : Window {
         if (_notificationHandle != IntPtr.Zero) {
             UnregisterSuspendResumeNotification(_notificationHandle);
             _notificationHandle = IntPtr.Zero;
+        }
+        if (_awayModeNotificationHandle != IntPtr.Zero) {
+            UnregisterPowerSettingNotification(_awayModeNotificationHandle);
+            _awayModeNotificationHandle = IntPtr.Zero;
         }
         base.OnClosed(e);
     }
