@@ -155,7 +155,7 @@ public partial class MainWindow : Window {
 
     private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e) {
         var message = e.TryGetWebMessageAsString();
-        if (message == "getRecords") {
+        if (message == "getActiveWindowRecords") {
             var json = await _monitorService.GetRecordsJsonAsync();
             webView.CoreWebView2.PostWebMessageAsJson(json);
         } else if (message != null && message.StartsWith("getBootDurations")) {

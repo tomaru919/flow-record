@@ -430,8 +430,8 @@ LIMIT 100";
                     end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString()
                 });
             }
-            return JsonSerializer.Serialize(new { type = "records", data = results });
-        } catch { return "{\"type\":\"records\",\"data\":[]}"; }
+            return JsonSerializer.Serialize(new { type = "activeWindowRecords", data = results });
+        } catch { return "{\"type\":\"activeWindowRecords\",\"data\":[]}"; }
     }
 
     public async Task<string> GetDailyBootDurationJsonAsync(int weekOffset = 0) {

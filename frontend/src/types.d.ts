@@ -1,4 +1,4 @@
-export interface Record {
+export interface ActiveWindowRecord {
   window_title: string
   event_type: string
   start_time: string

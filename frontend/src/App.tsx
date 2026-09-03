@@ -2,10 +2,15 @@ import { useEffect, useState } from 'react'
 import './App.css'
 import DailyActivityChart from './components/DailyActivityChart'
 import ActiveWindowChart from './components/ActiveWindowChart'
-import type { Record, BootDuration, ActiveWindowDuration, WebViewMessageEvent } from './types'
+import type {
+  ActiveWindowRecord,
+  BootDuration,
+  ActiveWindowDuration,
+  WebViewMessageEvent,
+} from './types'
 
 export default function App() {
-  const [records, setRecords] = useState<Record[]>([])
+  const [activeWindowRecords, setActiveWindowRecords] = useState<ActiveWindowRecord[]>([])
   const [bootDurations, setBootDurations] = useState<BootDuration[]>([])
   const [activeWindowDurations, setActiveWindowDurations] = useState<ActiveWindowDuration[]>([])
   const [weekOffset, setWeekOffset] = useState(0)
@@ -18,7 +23,7 @@ export default function App() {
 
   const refreshData = () => {
     if (window.chrome?.webview) {
-      window.chrome.webview.postMessage('getRecords')
+      window.chrome.webview.postMessage('getActiveWindowRecords')
       requestBootDurations(weekOffset)
       window.chrome.webview.postMessage('getActiveWindowDurations')
     } else {
@@ -44,8 +49,8 @@ export default function App() {
       const handleMessage = (event: WebViewMessageEvent) => {
         const message = event.data
         
-        if (message.type === 'records') {
-          setRecords(message.data)
+        if (message.type === 'activeWindowRecords') {
+          setActiveWindowRecords(message.data)
         } else if (message.type === 'bootDurations') {
           setBootDurations(message.data)
         } else if (message.type === 'activeWindowDurations') {
@@ -92,7 +97,7 @@ export default function App() {
             </tr>
           </thead>
           <tbody>
-            {records.map((record, index) => (
+            {activeWindowRecords.map((record, index) => (
               <tr key={index}>
                 <td>{new Date(record.start_time).toLocaleTimeString()}</td>
                 <td>{record.event_type}</td>
