@@ -35,6 +35,17 @@ public class MonitorService {
     private static string DbPath => Path.Combine(AppDataDir, "flowrecord.db");
 #endif
 
+    // Debug.WriteLine はデバッガ未アタッチ時は表示されず追跡できないため、
+    // スリープ/復帰まわりの診断はファイルにも残す
+    private static readonly string PowerLogPath = Path.Combine(AppDataDir, "power.log");
+
+    public static void LogPower(string message) {
+        try {
+            Directory.CreateDirectory(AppDataDir);
+            File.AppendAllText(PowerLogPath, $"{DateTime.Now:O} {message}{Environment.NewLine}");
+        } catch { }
+    }
+
     public void Initialize() {
         Directory.CreateDirectory(AppDataDir);
 
@@ -136,8 +147,15 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
     // Modern Standbyでは短時間のsuspend/resumeが連続することがあるため、
     // 未確定の行が既にある場合は新規行を作らず、最初のスリープ時刻を保持する
     public void RecordSleep(DateTime sleepTime) {
-        if (_sleepWakeId.HasValue) return;
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        LogPower($"RecordSleep called: {sleepTime}");
+        if (_sleepWakeId.HasValue) {
+            LogPower("RecordSleep skipped: unconfirmed sleep already pending");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(connectionString)) {
+            LogPower("RecordSleep skipped: connectionString is empty");
+            return;
+        }
         try {
             using var conn = new SqliteConnection(connectionString);
             conn.Open();
@@ -167,6 +185,7 @@ SELECT last_insert_rowid();";
 
     // 復帰イベントを即確定せず、一定時間後も再スリープしていなければ本復帰とみなしてDBへ書き込む
     public void ScheduleWakeConfirmation(DateTime wakeTime) {
+        LogPower($"ScheduleWakeConfirmation called: {wakeTime}");
         _wakeConfirmCts?.Cancel();
         var cts = new CancellationTokenSource();
         _wakeConfirmCts = cts;
@@ -185,7 +204,11 @@ SELECT last_insert_rowid();";
 
     // 復帰確定時：スリープ時に作成した行の wake_time を直接更新する
     private async Task RecordWakeAsync(DateTime wakeTime) {
-        if (!_sleepWakeId.HasValue || string.IsNullOrWhiteSpace(connectionString)) return;
+        LogPower($"RecordWakeAsync called: {wakeTime}, pendingId={_sleepWakeId}");
+        if (!_sleepWakeId.HasValue || string.IsNullOrWhiteSpace(connectionString)) {
+            LogPower("RecordWakeAsync skipped: no pending sleep row or empty connectionString");
+            return;
+        }
         try {
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
@@ -198,8 +221,10 @@ WHERE id = @id";
             cmd.Parameters.AddWithValue("@id", _sleepWakeId.Value);
             await cmd.ExecuteNonQueryAsync();
             Debug.WriteLine($"Wake recorded: id={_sleepWakeId}, wake={wakeTime}");
+            LogPower($"Wake recorded: id={_sleepWakeId}, wake={wakeTime}");
         } catch (Exception ex) {
             Debug.WriteLine($"RecordWakeAsync error: {ex.Message}");
+            LogPower($"RecordWakeAsync error: {ex}");
         } finally {
             _sleepWakeId = null;
         }

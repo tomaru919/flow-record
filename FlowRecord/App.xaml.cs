@@ -12,6 +12,7 @@ public partial class App : System.Windows.Application {
 
     protected override void OnStartup(StartupEventArgs e) {
         Debug.WriteLine("FlowRecord launched");
+        
         base.OnStartup(e);
 
         // PCシャットダウン/ログオフ通知
