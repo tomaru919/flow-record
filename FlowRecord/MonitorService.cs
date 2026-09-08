@@ -7,10 +7,10 @@ using Microsoft.Data.Sqlite;
 
 namespace FlowRecord.Monitor;
 
-public class MonitorService {
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+public partial class MonitorService {
+    [LibraryImport("user32.dll")] private static partial IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
     private string currentWindow = "";
@@ -43,7 +43,9 @@ public class MonitorService {
         try {
             Directory.CreateDirectory(AppDataDir);
             File.AppendAllText(PowerLogPath, $"{DateTime.Now:O} {message}{Environment.NewLine}");
-        } catch { }
+        } catch (Exception ex) {
+            Debug.WriteLine($"Error logging power event: {ex.Message}");
+        }
     }
 
     public void Initialize() {

@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using FlowRecord.Monitor;
+using System.Diagnostics;
 
 namespace FlowRecord;
 
@@ -28,16 +29,18 @@ public partial class MainWindow : Window {
         public byte Data;
     }
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr RegisterSuspendResumeNotification(IntPtr hRecipient, uint Flags);
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnregisterSuspendResumeNotification(IntPtr Handle);
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr RegisterPowerSettingNotification(IntPtr hRecipient, ref Guid PowerSettingGuid, uint Flags);
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnregisterPowerSettingNotification(IntPtr Handle);
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    private static partial IntPtr RegisterSuspendResumeNotification(IntPtr hRecipient, uint Flags);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool UnregisterSuspendResumeNotification(IntPtr Handle);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    private static partial IntPtr RegisterPowerSettingNotification(IntPtr hRecipient, ref Guid PowerSettingGuid, uint Flags);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool UnregisterPowerSettingNotification(IntPtr Handle);
+    [LibraryImport("dwmapi.dll")]
+    private static partial int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     private IntPtr _notificationHandle;
     private IntPtr _awayModeNotificationHandle;
@@ -226,6 +229,8 @@ public partial class MainWindow : Window {
                 key.SetValue("FlowRecord", currentModule.FileName);
             }
 #endif
-        } catch { }
+        } catch (Exception ex) {
+            Debug.WriteLine($"Error setting startup: {ex.Message}");
+        }
     }
 }
