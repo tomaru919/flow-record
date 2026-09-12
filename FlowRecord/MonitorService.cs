@@ -35,8 +35,7 @@ public partial class MonitorService {
     private static string DbPath => Path.Combine(AppDataDir, "flowrecord.db");
 #endif
 
-    // Debug.WriteLine はデバッガ未アタッチ時は表示されず追跡できないため、
-    // スリープ/復帰まわりの診断はファイルにも残す
+    // Debug.WriteLine はデバッガ未アタッチ時に見えないため、診断をファイルにも残す
     private static readonly string PowerLogPath = Path.Combine(AppDataDir, "power.log");
 
     public static void LogPower(string message) {
@@ -90,13 +89,10 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
         cmd.ExecuteNonQuery();
     }
 
-    // ★起動時の処理をここでまとめて実行する
     public void Start() {
         _cts = new CancellationTokenSource();
 
         Task.Run(async () => {
-            // 1) 起動時間をDBに保存してIDを確保
-            // 2) 監視ループ開始
             try {
                 _bootShutdownId = await CreateBootRecordAsync(DateTime.Now);
 
@@ -144,10 +140,7 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
         return "";
     }
 
-    // スリープ時：DBに sleep_time だけの行を直接書き込む（同期）。
-    // ローカルのSQLiteファイルへの書き込みは高速なため、中断前に完了させられる
-    // Modern Standbyでは短時間のsuspend/resumeが連続することがあるため、
-    // 未確定の行が既にある場合は新規行を作らず、最初のスリープ時刻を保持する
+    // Modern Standbyの短時間suspend/resumeに対応：未確定行があれば最初のスリープ時刻を保持する
     public void RecordSleep(DateTime sleepTime) {
         LogPower($"RecordSleep called: {sleepTime}");
         if (_sleepWakeId.HasValue) {
@@ -179,7 +172,7 @@ SELECT last_insert_rowid();";
     private CancellationTokenSource? _wakeConfirmCts;
     private static readonly TimeSpan WakeConfirmDelay = TimeSpan.FromSeconds(5);
 
-    // 直前の復帰確定待ちをキャンセルする（再度スリープした＝一時的な復帰だった場合に呼ぶ）
+    // 再スリープ（一時的な復帰）時に呼び、直前の確定待ちを取り消す
     public void CancelPendingWake() {
         _wakeConfirmCts?.Cancel();
         _wakeConfirmCts = null;
@@ -204,7 +197,6 @@ SELECT last_insert_rowid();";
         await RecordWakeAsync(wakeTime);
     }
 
-    // 復帰確定時：スリープ時に作成した行の wake_time を直接更新する
     private async Task RecordWakeAsync(DateTime wakeTime) {
         LogPower($"RecordWakeAsync called: {wakeTime}, pendingId={_sleepWakeId}");
         if (!_sleepWakeId.HasValue || string.IsNullOrWhiteSpace(connectionString)) {
@@ -239,9 +231,7 @@ WHERE id = @id";
         await RecordShutdownAsync(shutdownTime);
     }
 
-    // OS シャットダウン/ログオフ通知用：DBへ shutdown_time を直接書く（同期）。
-    // SessionEnding はプロセスが強制終了されるまでの猶予が短いため、
-    // ローカルSQLiteへの同期書き込みで完結させる
+    // SessionEnding は強制終了までの猶予が短いため、同期書き込みで完結させる
     public void RecordShutdownSync(DateTime shutdownTime) {
         if (_shutdownRecorded) return;
         if (string.IsNullOrWhiteSpace(connectionString)) return;
@@ -475,23 +465,27 @@ LIMIT 100";
 
             var dateParamNames = string.Join(", ", Enumerable.Range(0, 7).Select(i => $"(@d{i})"));
 
+            // @now まで稼働中とみなしてよいのは _bootShutdownId の現在のセッションだけ。他の shutdown_time NULL 行は孤立（クラッシュ等）のため boot_time にフォールバックする
             var query = $@"
 WITH ds(date) AS (VALUES {dateParamNames})
 SELECT
     ds.date AS date,
     COALESCE(SUM(
         CASE WHEN bs.boot_time IS NOT NULL THEN
-            (MIN(julianday(COALESCE(bs.shutdown_time, @now)), julianday(datetime(ds.date, '+1 day')))
+            (MIN(julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)), julianday(datetime(ds.date, '+1 day')))
              - MAX(julianday(bs.boot_time), julianday(ds.date))) * 24.0
         END
     ), 0) AS total_hours
 FROM ds
-LEFT JOIN boot_shutdown bs ON date(bs.boot_time) = ds.date
+LEFT JOIN boot_shutdown bs
+    ON julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
+   AND julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)) >= julianday(ds.date)
 GROUP BY ds.date
 ORDER BY ds.date ASC";
 
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@now", DateTime.Now);
+            cmd.Parameters.AddWithValue("@currentBootId", (object?)_bootShutdownId ?? DBNull.Value);
             for (int i = 0; i < dates.Length; i++) {
                 cmd.Parameters.AddWithValue($"@d{i}", dates[i].ToString("yyyy-MM-dd"));
             }
@@ -521,21 +515,23 @@ ORDER BY ds.date ASC";
             var tomorrow = today.AddDays(1);
             var now = DateTime.Now;
 
+            // @now まで表示中とみなしてよいのは _currentWindowRecordId の行だけ。他の end_time NULL 行は孤立（強制終了等）のため start_time にフォールバックする
             const string query = @"
 SELECT
     window_title,
-    SUM((julianday(MIN(COALESCE(end_time, @now), @tomorrow)) - julianday(start_time)) * 24.0) AS duration_hours
+    SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @tomorrow)) - julianday(start_time)) * 24.0) AS duration_hours
 FROM active_window
 WHERE start_time >= @today
   AND start_time < @tomorrow
 GROUP BY window_title
-HAVING SUM((julianday(MIN(COALESCE(end_time, @now), @tomorrow)) - julianday(start_time)) * 24.0) > 0
+HAVING SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @tomorrow)) - julianday(start_time)) * 24.0) > 0
 ORDER BY duration_hours DESC";
 
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@now", now);
             cmd.Parameters.AddWithValue("@today", today);
             cmd.Parameters.AddWithValue("@tomorrow", tomorrow);
+            cmd.Parameters.AddWithValue("@currentWindowRecordId", (object?)_currentWindowRecordId ?? DBNull.Value);
 
             await using var reader = await cmd.ExecuteReaderAsync();
             var results = new List<object>();
