@@ -22,6 +22,9 @@ public partial class MonitorService {
     private long? _sleepWakeId;
     private bool _shutdownRecorded;
     private readonly SemaphoreSlim _shutdownLock = new(1, 1);
+    // 監視ループ（バックグラウンド）とスリープ通知（UIスレッド）の両方が currentWindow/_currentWindowRecordId を書き換えるため排他する
+    private readonly SemaphoreSlim _windowLock = new(1, 1);
+    private volatile bool _isSuspended;
 
     private static string AppDataDir =>
         Path.Combine(
@@ -106,18 +109,26 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
     private async Task MonitoringLoop(CancellationToken token) {
         while (!token.IsCancellationRequested) {
             try {
-                string activeWindow = GetActiveWindowTitle();
-                if (activeWindow != currentWindow) {
-                    if (!string.IsNullOrEmpty(currentWindow)) {
-                        await CloseCurrentWindowAsync(DateTime.Now);
-                        currentWindow = "";
-                        _currentWindowRecordId = null;
+                await _windowLock.WaitAsync(token);
+                try {
+                    // スリープ中は記録しない（Modern Standbyではプロセスが完全には凍結されないことがある）
+                    if (!_isSuspended) {
+                        string activeWindow = GetActiveWindowTitle();
+                        if (activeWindow != currentWindow) {
+                            if (!string.IsNullOrEmpty(currentWindow)) {
+                                await CloseCurrentWindowAsync(DateTime.Now);
+                                currentWindow = "";
+                                _currentWindowRecordId = null;
+                            }
+                            if (!string.IsNullOrEmpty(activeWindow)) {
+                                currentWindow = activeWindow;
+                                windowStartTime = DateTime.Now;
+                                _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
+                            }
+                        }
                     }
-                    if (!string.IsNullOrEmpty(activeWindow)) {
-                        currentWindow = activeWindow;
-                        windowStartTime = DateTime.Now;
-                        _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
-                    }
+                } finally {
+                    _windowLock.Release();
                 }
                 await Task.Delay(1000, token);
             } catch (TaskCanceledException) { break; } catch (Exception ex) { Debug.WriteLine($"Error: {ex.Message}"); }
@@ -166,6 +177,45 @@ SELECT last_insert_rowid();";
             Debug.WriteLine($"Sleep recorded: {sleepTime}");
         } catch (Exception ex) {
             Debug.WriteLine($"RecordSleep error: {ex.Message}");
+        }
+    }
+
+    // スリープ直前に表示中ウィンドウの記録を閉じ、復帰まで監視を止める。
+    // 閉じずにおくと、同じウィンドウのまま復帰した場合にスリープ時間がそのウィンドウの使用時間に含まれてしまう
+    public void SuspendMonitoring(DateTime sleepTime) {
+        _windowLock.Wait();
+        try {
+            _isSuspended = true;
+            if (_currentWindowRecordId.HasValue) {
+                CloseActiveWindowSync(_currentWindowRecordId.Value, sleepTime);
+            }
+            currentWindow = "";
+            _currentWindowRecordId = null;
+        } finally {
+            _windowLock.Release();
+        }
+    }
+
+    // 復帰直後から監視を再開し、次のループで表示中ウィンドウの記録を新しく開始する
+    public void ResumeMonitoring() {
+        _isSuspended = false;
+    }
+
+    private void CloseActiveWindowSync(long recordId, DateTime endTime) {
+        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        try {
+            using var conn = new SqliteConnection(connectionString);
+            conn.Open();
+            const string query = @"
+UPDATE active_window
+SET end_time = @end_time
+WHERE id = @id AND end_time IS NULL";
+            using var cmd = new SqliteCommand(query, conn);
+            cmd.Parameters.AddWithValue("@end_time", endTime);
+            cmd.Parameters.AddWithValue("@id", recordId);
+            cmd.ExecuteNonQuery();
+        } catch (Exception ex) {
+            Debug.WriteLine($"CloseActiveWindowSync error: {ex.Message}");
         }
     }
 
@@ -465,36 +515,52 @@ LIMIT 100";
 
             var dateParamNames = string.Join(", ", Enumerable.Range(0, 7).Select(i => $"(@d{i})"));
 
-            // @now まで稼働中とみなしてよいのは _bootShutdownId の現在のセッションだけ。他の shutdown_time NULL 行は孤立（クラッシュ等）のため boot_time にフォールバックする
+            // @now まで稼働中とみなしてよいのは _bootShutdownId の現在のセッション（スリープは _sleepWakeId）だけ。
+            // 他の shutdown_time/wake_time が NULL の行は孤立（クラッシュ等）のため boot_time/sleep_time にフォールバックする。
+            // total_hours（boot_time〜shutdown_time）にはスリープしていた時間も含まれてしまうため、
+            // sleep_hours を別途集計し、フロント側で total_hours - sleep_hours を「実際に使用していた時間」として表示する
             var query = $@"
 WITH ds(date) AS (VALUES {dateParamNames})
 SELECT
     ds.date AS date,
-    COALESCE(SUM(
-        CASE WHEN bs.boot_time IS NOT NULL THEN
+    COALESCE((
+        SELECT SUM(
             (MIN(julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)), julianday(datetime(ds.date, '+1 day')))
              - MAX(julianday(bs.boot_time), julianday(ds.date))) * 24.0
-        END
-    ), 0) AS total_hours
+        )
+        FROM boot_shutdown bs
+        WHERE julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
+          AND julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)) >= julianday(ds.date)
+    ), 0) AS total_hours,
+    COALESCE((
+        SELECT SUM(
+            (MIN(julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)), julianday(datetime(ds.date, '+1 day')))
+             - MAX(julianday(sw.sleep_time), julianday(ds.date))) * 24.0
+        )
+        FROM sleep_wake sw
+        WHERE sw.sleep_time IS NOT NULL
+          AND julianday(sw.sleep_time) < julianday(datetime(ds.date, '+1 day'))
+          AND julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)) >= julianday(ds.date)
+    ), 0) AS sleep_hours
 FROM ds
-LEFT JOIN boot_shutdown bs
-    ON julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
-   AND julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)) >= julianday(ds.date)
-GROUP BY ds.date
 ORDER BY ds.date ASC";
 
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@now", DateTime.Now);
             cmd.Parameters.AddWithValue("@currentBootId", (object?)_bootShutdownId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@currentSleepId", (object?)_sleepWakeId ?? DBNull.Value);
             for (int i = 0; i < dates.Length; i++) {
                 cmd.Parameters.AddWithValue($"@d{i}", dates[i].ToString("yyyy-MM-dd"));
             }
             await using var reader = await cmd.ExecuteReaderAsync();
             var results = new List<object>();
             while (await reader.ReadAsync()) {
+                var totalHours = Convert.ToDouble(reader["total_hours"]);
+                var sleepHours = Math.Min(Convert.ToDouble(reader["sleep_hours"]), totalHours);
                 results.Add(new {
                     date = reader["date"].ToString(),
-                    total_hours = Math.Round(Convert.ToDouble(reader["total_hours"]), 2)
+                    total_hours = Math.Round(totalHours, 2),
+                    sleep_hours = Math.Round(sleepHours, 2)
                 });
             }
             return JsonSerializer.Serialize(new { type = "bootDurations", data = results });

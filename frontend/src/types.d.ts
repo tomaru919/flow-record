@@ -8,6 +8,7 @@ export interface ActiveWindowRecord {
 export interface BootDuration {
   date: string
   total_hours: number
+  sleep_hours: number
 }
 
 export interface ActiveWindowDuration {

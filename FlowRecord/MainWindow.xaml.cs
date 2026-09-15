@@ -87,13 +87,16 @@ public partial class MainWindow : Window {
         _monitorService.CancelPendingWake();
         if (!_isSleeping) {
             _isSleeping = true;
-            _monitorService.RecordSleep(DateTime.Now);
+            var sleepTime = DateTime.Now;
+            _monitorService.SuspendMonitoring(sleepTime);
+            _monitorService.RecordSleep(sleepTime);
         }
     }
 
     private void HandleResume() {
         if (_isSleeping) {
             _isSleeping = false;
+            _monitorService.ResumeMonitoring();
             _monitorService.ScheduleWakeConfirmation(DateTime.Now);
         }
     }

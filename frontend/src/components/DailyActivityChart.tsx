@@ -39,6 +39,9 @@ const getWeekRangeLabel = (weekOffset: number) => {
 }
 
 export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWeek, onNextWeek }: DailyActivityChartProps) {
+  const awakeHours = bootDurations.map(d => Math.max(0, d.total_hours - d.sleep_hours))
+  const sleepHours = bootDurations.map(d => d.sleep_hours)
+
   const chartData = {
     labels: bootDurations.map(d => {
       const date = new Date(d.date)
@@ -46,11 +49,20 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
     }),
     datasets: [
       {
-        label: 'PC 稼働時間',
-        data: bootDurations.map(d => d.total_hours),
+        label: '使用時間',
+        data: awakeHours,
         backgroundColor: '#36a2eb',
-        borderRadius: 4,
+        borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
         hoverBackgroundColor: '#2980b9',
+        stack: 'usage',
+      },
+      {
+        label: 'スリープしていた時間',
+        data: sleepHours,
+        backgroundColor: '#4caf50',
+        borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
+        hoverBackgroundColor: '#3d8b40',
+        stack: 'usage',
       }
     ]
   }
@@ -63,7 +75,16 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: false,
+        display: true,
+        position: 'top' as const,
+        labels: {
+          boxWidth: 12,
+          padding: 12,
+          color: '#888',
+          font: {
+            size: 11
+          }
+        }
       },
       tooltip: {
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
@@ -80,13 +101,14 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
             const totalMinutes = Math.round(value * 60)
             const hours = Math.floor(totalMinutes / 60)
             const minutes = totalMinutes % 60
-            return `稼働時間: ${hours}時間${minutes}分`
+            return `${context.dataset.label}: ${hours}時間${minutes}分`
           }
         }
       }
     },
     scales: {
       x: {
+        stacked: true,
         grid: {
           display: false,
         },
@@ -97,6 +119,7 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
         }
       },
       y: {
+        stacked: true,
         beginAtZero: true,
         grid: {
           color: 'rgba(200, 200, 200, 0.1)',
