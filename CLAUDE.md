@@ -192,3 +192,8 @@ ORDER BY ds.date ASC
 - **Naming note**: The namespace (`FlowRecord.Logging`) deliberately differs from the class name (`PowerLogger`). An earlier attempt used `namespace FlowRecord.Log` with `class Log`, which made the unqualified name `Log` resolve to the *namespace* (a nested namespace of the file's own `FlowRecord` namespace) rather than the type, so `Log.LogPower(...)` failed to compile from `MainWindow.xaml.cs`.
 - **Duplication accepted**: `PowerLogger` computes `%LocalAppData%\FlowRecord` itself rather than sharing `MonitorService.AppDataDir`, keeping the logger free of any dependency on `MonitorService`.
 
+
+### 2026-09-21 (2): Run `Initialize`/`Start` from the `MonitorService` Constructor
+- **Change**: `MonitorService` now has a public constructor that calls `Initialize()` then `Start()`; both methods became `private`. `MainWindow`'s constructor is reduced to `_monitorService = new MonitorService();`.
+- **Reason**: `Start` depends on the `connectionString` that `Initialize` sets, and `MainWindow` was the only caller, always invoking them back-to-back in that order. Folding them into the constructor removes the possibility of a missed call or wrong ordering.
+- **Tradeoff**: Constructing a `MonitorService` now starts the background monitoring loop as a side effect, which would make standalone instantiation (e.g. in tests) harder. Accepted since there is a single instance, created once in `MainWindow`.

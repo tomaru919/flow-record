@@ -39,7 +39,12 @@ public partial class MonitorService {
     private static string DbPath => Path.Combine(AppDataDir, "flowrecord.db");
 #endif
 
-    public void Initialize() {
+    public MonitorService() {
+        Initialize();
+        Start();
+    }
+
+    private void Initialize() {
         Directory.CreateDirectory(AppDataDir);
 
         connectionString = $"Data Source={DbPath}";
@@ -81,7 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
         cmd.ExecuteNonQuery();
     }
 
-    public void Start() {
+    private void Start() {
         _cts = new CancellationTokenSource();
 
         Task.Run(async () => {

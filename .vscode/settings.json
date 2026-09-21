@@ -9,6 +9,7 @@
         "**/*.gitignore": true,
         "**/package-lock.json": true,
         "**/.claude": true,
+        "**/*.md": true,
     },
     "dotnet.defaultSolution": "FlowRecord/FlowRecord.sln",
     "files.exclude": {

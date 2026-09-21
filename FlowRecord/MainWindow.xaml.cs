@@ -58,8 +58,6 @@ public partial class MainWindow : Window {
         SetStartup();
 
         _monitorService = new MonitorService();
-        _monitorService.Initialize();
-        _monitorService.Start();
 
         InitializeWebView();
 
