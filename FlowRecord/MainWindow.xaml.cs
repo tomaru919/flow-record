@@ -2,10 +2,11 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using FlowRecord.Monitor;
-using System.Diagnostics;
+using FlowRecord.Logging;
 
 namespace FlowRecord;
 
@@ -77,7 +78,7 @@ public partial class MainWindow : Window {
         _notificationHandle = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
         var awayModeGuid = GUID_SYSTEM_AWAYMODE;
         _awayModeNotificationHandle = RegisterPowerSettingNotification(hwnd, ref awayModeGuid, DEVICE_NOTIFY_WINDOW_HANDLE);
-        MonitorService.LogPower(
+        PowerLogger.Log(
             $"Registered: suspendResumeHandle={_notificationHandle} (err={(_notificationHandle == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0)}), " +
             $"awayModeHandle={_awayModeNotificationHandle} (err={(_awayModeNotificationHandle == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0)})");
         ApplyTitleBarTheme(hwnd);
@@ -103,19 +104,19 @@ public partial class MainWindow : Window {
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
         if (msg == WM_POWERBROADCAST) {
-            MonitorService.LogPower($"WM_POWERBROADCAST received: wParam=0x{wParam.ToInt32():X}");
+            PowerLogger.Log($"WM_POWERBROADCAST received: wParam=0x{wParam.ToInt32():X}");
             switch (wParam.ToInt32()) {
                 case PBT_APMSUSPEND:
-                    MonitorService.LogPower("-> PBT_APMSUSPEND");
+                    PowerLogger.Log("-> PBT_APMSUSPEND");
                     HandleSuspend();
                     break;
                 case PBT_APMRESUMEAUTOMATIC:
-                    MonitorService.LogPower("-> PBT_APMRESUMEAUTOMATIC");
+                    PowerLogger.Log("-> PBT_APMRESUMEAUTOMATIC");
                     HandleResume();
                     break;
                 case PBT_POWERSETTINGCHANGE:
                     var setting = Marshal.PtrToStructure<POWERBROADCAST_SETTING>(lParam);
-                    MonitorService.LogPower($"-> PBT_POWERSETTINGCHANGE guid={setting.PowerSetting} data={setting.Data}");
+                    PowerLogger.Log($"-> PBT_POWERSETTINGCHANGE guid={setting.PowerSetting} data={setting.Data}");
                     if (setting.PowerSetting == GUID_SYSTEM_AWAYMODE) {
                         // Data == 1: away modeに入る（スリープ開始）, 0: away modeを抜ける（復帰）
                         if (setting.Data == 1) {

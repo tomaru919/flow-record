@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using FlowRecord.Logging;
 
 namespace FlowRecord.Monitor;
 
@@ -37,18 +38,6 @@ public partial class MonitorService {
 #else
     private static string DbPath => Path.Combine(AppDataDir, "flowrecord.db");
 #endif
-
-    // Debug.WriteLine はデバッガ未アタッチ時に見えないため、診断をファイルにも残す
-    private static readonly string PowerLogPath = Path.Combine(AppDataDir, "power.log");
-
-    public static void LogPower(string message) {
-        try {
-            Directory.CreateDirectory(AppDataDir);
-            File.AppendAllText(PowerLogPath, $"{DateTime.Now:O} {message}{Environment.NewLine}");
-        } catch (Exception ex) {
-            Debug.WriteLine($"Error logging power event: {ex.Message}");
-        }
-    }
 
     public void Initialize() {
         Directory.CreateDirectory(AppDataDir);
@@ -153,13 +142,13 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
 
     // Modern Standbyの短時間suspend/resumeに対応：未確定行があれば最初のスリープ時刻を保持する
     public void RecordSleep(DateTime sleepTime) {
-        LogPower($"RecordSleep called: {sleepTime}");
+        PowerLogger.Log($"RecordSleep called: {sleepTime}");
         if (_sleepWakeId.HasValue) {
-            LogPower("RecordSleep skipped: unconfirmed sleep already pending");
+            PowerLogger.Log("RecordSleep skipped: unconfirmed sleep already pending");
             return;
         }
         if (string.IsNullOrWhiteSpace(connectionString)) {
-            LogPower("RecordSleep skipped: connectionString is empty");
+            PowerLogger.Log("RecordSleep skipped: connectionString is empty");
             return;
         }
         try {
@@ -230,7 +219,7 @@ WHERE id = @id AND end_time IS NULL";
 
     // 復帰イベントを即確定せず、一定時間後も再スリープしていなければ本復帰とみなしてDBへ書き込む
     public void ScheduleWakeConfirmation(DateTime wakeTime) {
-        LogPower($"ScheduleWakeConfirmation called: {wakeTime}");
+        PowerLogger.Log($"ScheduleWakeConfirmation called: {wakeTime}");
         _wakeConfirmCts?.Cancel();
         var cts = new CancellationTokenSource();
         _wakeConfirmCts = cts;
@@ -248,9 +237,9 @@ WHERE id = @id AND end_time IS NULL";
     }
 
     private async Task RecordWakeAsync(DateTime wakeTime) {
-        LogPower($"RecordWakeAsync called: {wakeTime}, pendingId={_sleepWakeId}");
+        PowerLogger.Log($"RecordWakeAsync called: {wakeTime}, pendingId={_sleepWakeId}");
         if (!_sleepWakeId.HasValue || string.IsNullOrWhiteSpace(connectionString)) {
-            LogPower("RecordWakeAsync skipped: no pending sleep row or empty connectionString");
+            PowerLogger.Log("RecordWakeAsync skipped: no pending sleep row or empty connectionString");
             return;
         }
         try {
@@ -265,10 +254,10 @@ WHERE id = @id";
             cmd.Parameters.AddWithValue("@id", _sleepWakeId.Value);
             await cmd.ExecuteNonQueryAsync();
             Debug.WriteLine($"Wake recorded: id={_sleepWakeId}, wake={wakeTime}");
-            LogPower($"Wake recorded: id={_sleepWakeId}, wake={wakeTime}");
+            PowerLogger.Log($"Wake recorded: id={_sleepWakeId}, wake={wakeTime}");
         } catch (Exception ex) {
             Debug.WriteLine($"RecordWakeAsync error: {ex.Message}");
-            LogPower($"RecordWakeAsync error: {ex}");
+            PowerLogger.Log($"RecordWakeAsync error: {ex}");
         } finally {
             _sleepWakeId = null;
         }

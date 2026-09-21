@@ -186,3 +186,9 @@ ORDER BY ds.date ASC
 - **Thread safety**: `currentWindow`/`_currentWindowRecordId` are mutated both by the background loop and by `SuspendMonitoring` on the UI thread, so the loop body and `SuspendMonitoring` are serialized with a new `_windowLock` (`SemaphoreSlim`; `WaitAsync` in the loop, blocking `Wait` in `SuspendMonitoring` — safe because the loop's awaits run on the thread pool, not the UI thread).
 - **Data**: The debug DB was reset by the user, so no existing rows spanning a sleep needed correction; rows recorded before this fix (if any remained) would still include sleep time, since the query no longer compensates.
 
+### 2026-09-21: Extract Power Logging into Its Own Class
+- **Change**: Moved `MonitorService.LogPower(string)` and its `PowerLogPath` field out into a new file, `FlowRecord/PowerLogger.cs` — `namespace FlowRecord.Logging`, `public static class PowerLogger`, method `PowerLogger.Log(string)`. All call sites in `MonitorService.cs` and `MainWindow.xaml.cs` now use `PowerLogger.Log(...)`.
+- **Debug/Release split**: The log file now follows the same convention as the database — `power.debug.log` in DEBUG builds, `power.log` in Release, both under `%LocalAppData%\FlowRecord`. Previously both build configurations wrote to the same `power.log`.
+- **Naming note**: The namespace (`FlowRecord.Logging`) deliberately differs from the class name (`PowerLogger`). An earlier attempt used `namespace FlowRecord.Log` with `class Log`, which made the unqualified name `Log` resolve to the *namespace* (a nested namespace of the file's own `FlowRecord` namespace) rather than the type, so `Log.LogPower(...)` failed to compile from `MainWindow.xaml.cs`.
+- **Duplication accepted**: `PowerLogger` computes `%LocalAppData%\FlowRecord` itself rather than sharing `MonitorService.AppDataDir`, keeping the logger free of any dependency on `MonitorService`.
+
