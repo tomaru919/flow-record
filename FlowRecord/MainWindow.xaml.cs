@@ -21,6 +21,10 @@ public partial class MainWindow : Window {
     // Microsoft推奨のGUID_SYSTEM_AWAYMODE電源設定通知を併用してスリープ/復帰を検知する
     private static readonly Guid GUID_SYSTEM_AWAYMODE = new("98a7f580-01f7-48aa-9c0f-44352c29e5c0");
 
+    // Modern Standby中はWindowsがメンテナンス等で短時間だけスタンバイを抜けることがあり、
+    // その際も復帰通知が届いてしまう。画面がついたかどうかで本当の復帰（ユーザーが戻ってきた）を判定する
+    private static readonly Guid GUID_CONSOLE_DISPLAY_STATE = new("6fe69556-704a-47a0-8f24-c28d936fda47");
+
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -45,7 +49,9 @@ public partial class MainWindow : Window {
 
     private IntPtr _notificationHandle;
     private IntPtr _awayModeNotificationHandle;
+    private IntPtr _displayStateNotificationHandle;
     private bool _isSleeping = false;
+    private bool _isDisplayOn = true;
 
     private readonly MonitorService _monitorService;
 
@@ -76,9 +82,12 @@ public partial class MainWindow : Window {
         _notificationHandle = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
         var awayModeGuid = GUID_SYSTEM_AWAYMODE;
         _awayModeNotificationHandle = RegisterPowerSettingNotification(hwnd, ref awayModeGuid, DEVICE_NOTIFY_WINDOW_HANDLE);
+        var displayStateGuid = GUID_CONSOLE_DISPLAY_STATE;
+        _displayStateNotificationHandle = RegisterPowerSettingNotification(hwnd, ref displayStateGuid, DEVICE_NOTIFY_WINDOW_HANDLE);
         PowerLogger.Log(
             $"Registered: suspendResumeHandle={_notificationHandle} (err={(_notificationHandle == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0)}), " +
-            $"awayModeHandle={_awayModeNotificationHandle} (err={(_awayModeNotificationHandle == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0)})");
+            $"awayModeHandle={_awayModeNotificationHandle} (err={(_awayModeNotificationHandle == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0)}), " +
+            $"displayStateHandle={_displayStateNotificationHandle} (err={(_displayStateNotificationHandle == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0)})");
         ApplyTitleBarTheme(hwnd);
     }
 
@@ -92,12 +101,17 @@ public partial class MainWindow : Window {
         }
     }
 
+    // 画面が消えたままの復帰通知は、Modern Standby中にWindowsが一時的にスタンバイを抜けただけなので無視する。
+    // その場合は後で画面がついたときに、この関数が改めて呼ばれる
     private void HandleResume() {
-        if (_isSleeping) {
-            _isSleeping = false;
-            _monitorService.ResumeMonitoring();
-            _monitorService.ScheduleWakeConfirmation(DateTime.Now);
+        if (!_isSleeping) return;
+        if (!_isDisplayOn) {
+            PowerLogger.Log("HandleResume ignored: display is off");
+            return;
         }
+        _isSleeping = false;
+        _monitorService.ResumeMonitoring();
+        _monitorService.ScheduleWakeConfirmation(DateTime.Now);
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
@@ -122,6 +136,10 @@ public partial class MainWindow : Window {
                         } else {
                             HandleResume();
                         }
+                    } else if (setting.PowerSetting == GUID_CONSOLE_DISPLAY_STATE) {
+                        // Data == 0: 画面オフ, 1: 画面オン, 2: 画面を暗くしている（オン扱い）
+                        _isDisplayOn = setting.Data != 0;
+                        if (_isDisplayOn) HandleResume();
                     }
                     break;
             }
@@ -138,6 +156,10 @@ public partial class MainWindow : Window {
         if (_awayModeNotificationHandle != IntPtr.Zero) {
             UnregisterPowerSettingNotification(_awayModeNotificationHandle);
             _awayModeNotificationHandle = IntPtr.Zero;
+        }
+        if (_displayStateNotificationHandle != IntPtr.Zero) {
+            UnregisterPowerSettingNotification(_displayStateNotificationHandle);
+            _displayStateNotificationHandle = IntPtr.Zero;
         }
         base.OnClosed(e);
     }

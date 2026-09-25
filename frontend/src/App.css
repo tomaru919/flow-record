@@ -42,9 +42,9 @@
 }
 
 .pie-canvas-wrapper {
-  /* position: relative; */
+  position: relative;
   flex: 1;
-  /* min-height: 0; */
+  min-height: 0;
 }
 
 .pie-chart {
