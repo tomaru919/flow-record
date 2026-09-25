@@ -7,6 +7,7 @@ import {
   Tooltip,
   Legend,
   type TooltipItem,
+  type ScriptableContext,
 } from "chart.js"
 import { Bar } from "react-chartjs-2"
 import type { BootDuration } from "../types"
@@ -52,7 +53,11 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
         label: '使用時間',
         data: awakeHours,
         backgroundColor: '#36a2eb',
-        borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 4, bottomRight: 4 },
+        // スリープ時間がない日は使用時間がバーの先頭になるので、上の角も丸める
+        borderRadius: (ctx: ScriptableContext<'bar'>) => {
+          const top = sleepHours[ctx.dataIndex] > 0 ? 0 : 4
+          return { topLeft: top, topRight: top, bottomLeft: 4, bottomRight: 4 }
+        },
         hoverBackgroundColor: '#2980b9',
         stack: 'usage',
       },
