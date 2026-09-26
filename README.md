@@ -57,6 +57,8 @@
 - [ ] githubからリリースできるようにする
 - [ ] アクティブウィンドウの内訳も遡れるようにする
 - [x] スリープ時間がない場合、起動時間のバーの先頭を丸める
+- [ ] バーが小さいと情報が見にくいのでバーの延長線上でカーソルをホバーしても情報が見えるようにする
+- [ ] バックエンドのディレクトリ（FlowRecord/）はプロジェクトディレクトリに展開し、フロントエンドはその中に置く
 
 ## 課題
 - "Exit"ボタンを押したらパソコンのシャットダウン時間を記録できなくなる
@@ -65,17 +67,12 @@
 
 ## ビルド方法
 
-### バックエンドのビルド
+バックエンドとフロントエンドを一度にビルドします（フロントエンドは `FlowRecord.csproj` の `PublishFrontend` ターゲットで自動的にビルドされ、`publish/wwwroot` に入ります）。
 ```bash
 cd FlowRecord/
-dotnet publish -c Release -r win-x64 --self-contained true
+dotnet publish -c Release
 ```
-
-### フロントエンドのビルド
-```bash
-cd frontend/
-npm run build
-```
+出力先: `FlowRecord/bin/Release/net10.0-windows/win-x64/publish/`
 
 ### claude code
 claude --resume 70bb0693-ffd9-4be3-bfe0-ab0b391d530f

@@ -152,3 +152,9 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 ### 2026-09-25: Round the Top of Usage-Only Bars
 - **Issue**: On days with no sleep time, the daily activity bar consists only of the blue `使用時間` segment, but its top corners were square — the stacked-bar change (2026-09-14) had hardcoded `topLeft/topRight: 0` on that dataset, assuming the green sleep segment would always sit on top.
 - **Fix (`DailyActivityChart.tsx`)**: The `使用時間` dataset's `borderRadius` is now a scriptable option (`ScriptableContext<'bar'>`) that rounds the top corners only when `sleepHours[ctx.dataIndex]` is 0, so whichever segment is topmost gets the rounded corners.
+
+### 2026-09-26: Build Backend and Frontend with One Command
+- **Change**: `dotnet publish -c Release` now also builds the frontend. A new `PublishFrontend` target in `FlowRecord.csproj` (`AfterTargets="ComputeFilesToPublish"`) runs `npm install` (only if `node_modules` is missing) and `npm run build`, deletes the old `publish/wwwroot`, then adds `frontend/dist/**` to `ResolvedFileToPublish` with `RelativePath` `wwwroot\...` and `ExcludeFromSingleFile=true` (so `PublishSingleFile` doesn't embed them in the exe, where WebView2's virtual host mapping couldn't read them).
+- **Vite**: Removed the hardcoded `outDir` (`../FlowRecord/bin/Release/net10.0-windows/win-x64/publish/wwwroot`) from `vite.config.ts`; Vite now builds to its default `frontend/dist`, so the frontend no longer depends on the .NET output path.
+- **Scope**: The target only runs during publish; `dotnet build` (Debug, which loads the Vite dev server at `localhost:5173`) is unaffected.
+- **Verified**: Ran `dotnet publish -c Release` — `publish/wwwroot` contained `index.html` and `assets/` with the hashed files `index.html` references. Confirmed `dotnet build` does not invoke Vite. README build instructions updated.

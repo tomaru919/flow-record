@@ -27,4 +27,25 @@
     <Resource Include="app.ico" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <FrontendDir>$(MSBuildProjectDirectory)\..\frontend\</FrontendDir>
+  </PropertyGroup>
+
+  <!-- dotnet publish の途中でフロントエンドをビルドし、dist の中身を publish 先の wwwroot に含める -->
+  <Target Name="PublishFrontend" AfterTargets="ComputeFilesToPublish">
+    <Exec Command="npm install" WorkingDirectory="$(FrontendDir)" Condition="!Exists('$(FrontendDir)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(FrontendDir)" />
+    <!-- 前回のビルドで作られた古いファイル（ハッシュ付きのJS/CSS）が残らないように消しておく -->
+    <RemoveDir Directories="$(PublishDir)wwwroot" />
+    <ItemGroup>
+      <FrontendDistFiles Include="$(FrontendDir)dist\**" />
+      <ResolvedFileToPublish Include="@(FrontendDistFiles->'%(FullPath)')">
+        <RelativePath>wwwroot\%(FrontendDistFiles.RecursiveDir)%(FrontendDistFiles.Filename)%(FrontendDistFiles.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <!-- PublishSingleFile で exe に埋め込まれると WebView2 がファイルとして読めないので、外に置く -->
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>
