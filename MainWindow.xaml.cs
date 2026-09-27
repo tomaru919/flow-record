@@ -237,7 +237,7 @@ public partial class MainWindow : Window {
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) {
         if (e.Category == UserPreferenceCategory.General) {
             var hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd != IntPtr.Zero) Dispatcher.Invoke(() => ApplyTitleBarTheme(hwnd));
+            if (hwnd != IntPtr.Zero) ApplyTitleBarTheme(hwnd);
         }
     }
 
