@@ -9,9 +9,8 @@
         "**/*.gitignore": true,
         "**/package-lock.json": true,
         "**/.claude": true,
-        "**/*.md": true,
     },
-    "dotnet.defaultSolution": "FlowRecord/FlowRecord.sln",
+    "dotnet.defaultSolution": "FlowRecord.sln",
     "files.exclude": {
         "**/*_wpftmp.csproj": true
     },

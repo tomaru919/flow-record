@@ -1,6 +1,6 @@
 # SemaphoreSlim とは / なぜ排他が必要なのか
 
-対象コード: `FlowRecord/MonitorService.cs`
+対象コード: `MonitorService.cs`
 
 ## `SemaphoreSlim` とは
 

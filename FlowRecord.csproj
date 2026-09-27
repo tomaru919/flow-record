@@ -28,7 +28,9 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <FrontendDir>$(MSBuildProjectDirectory)\..\frontend\</FrontendDir>
+    <FrontendDir>$(MSBuildProjectDirectory)\frontend\</FrontendDir>
+    <!-- csproj はフォルダ内のファイルを自動で取り込むので、C# と関係ないフォルダは対象外にする（node_modules を走査するとビルドが遅くなる） -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);frontend\**;docs\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- dotnet publish の途中でフロントエンドをビルドし、dist の中身を publish 先の wwwroot に含める -->

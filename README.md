@@ -58,7 +58,7 @@
 - [ ] アクティブウィンドウの内訳も遡れるようにする
 - [x] スリープ時間がない場合、起動時間のバーの先頭を丸める
 - [ ] バーが小さいと情報が見にくいのでバーの延長線上でカーソルをホバーしても情報が見えるようにする
-- [ ] バックエンドのディレクトリ（FlowRecord/）はプロジェクトディレクトリに展開し、フロントエンドはその中に置く
+- [x] バックエンドのディレクトリ（FlowRecord/）はプロジェクトディレクトリに展開し、フロントエンドはその中に置く
 
 ## 課題
 - "Exit"ボタンを押したらパソコンのシャットダウン時間を記録できなくなる
@@ -67,12 +67,11 @@
 
 ## ビルド方法
 
-バックエンドとフロントエンドを一度にビルドします（フロントエンドは `FlowRecord.csproj` の `PublishFrontend` ターゲットで自動的にビルドされ、`publish/wwwroot` に入ります）。
+バックエンドとフロントエンドを一度にビルドします（フロントエンドは `FlowRecord.csproj` の `PublishFrontend` ターゲットで自動的にビルドされ、`publish/wwwroot` に入ります）。プロジェクトのルートで実行します。
 ```bash
-cd FlowRecord/
 dotnet publish -c Release
 ```
-出力先: `FlowRecord/bin/Release/net10.0-windows/win-x64/publish/`
+出力先: `bin/Release/net10.0-windows/win-x64/publish/`
 
 ### claude code
 claude --resume 70bb0693-ffd9-4be3-bfe0-ab0b391d530f

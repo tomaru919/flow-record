@@ -158,3 +158,9 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **Vite**: Removed the hardcoded `outDir` (`../FlowRecord/bin/Release/net10.0-windows/win-x64/publish/wwwroot`) from `vite.config.ts`; Vite now builds to its default `frontend/dist`, so the frontend no longer depends on the .NET output path.
 - **Scope**: The target only runs during publish; `dotnet build` (Debug, which loads the Vite dev server at `localhost:5173`) is unaffected.
 - **Verified**: Ran `dotnet publish -c Release` — `publish/wwwroot` contained `index.html` and `assets/` with the hashed files `index.html` references. Confirmed `dotnet build` does not invoke Vite. README build instructions updated.
+
+### 2026-09-27: Move the Backend Project to the Repository Root
+- **Change**: Moved everything in `FlowRecord/` (csproj, sln, `.cs`/`.xaml`, `app.ico`, `.editorconfig`, `.gitignore`, and the untracked `.env`) to the repository root with `git mv`, so `frontend/` now sits inside the backend project directory. Deleted the old `FlowRecord/bin` and `FlowRecord/obj` build outputs.
+- **`FlowRecord.csproj`**: `FrontendDir` changed from `..\frontend\` to `frontend\`. Added `frontend\**;docs\**` to `DefaultItemExcludes` — SDK-style projects glob every file under the project folder, so without this `node_modules` would be scanned on every build.
+- **Paths updated**: `.vscode/settings.json` (`dotnet.defaultSolution`), `.vscode/tasks.json`, README build instructions (run `dotnet publish -c Release` at the root; output under `bin/Release/...`), `docs/SemaphoreSlim.md`.
+- **Verified**: `dotnet publish -c Release` built the frontend and put `index.html` and `assets/` into `publish/wwwroot`; `dotnet build` finished with 0 errors.
