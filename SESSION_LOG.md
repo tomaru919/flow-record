@@ -164,3 +164,13 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **`FlowRecord.csproj`**: `FrontendDir` changed from `..\frontend\` to `frontend\`. Added `frontend\**;docs\**` to `DefaultItemExcludes` — SDK-style projects glob every file under the project folder, so without this `node_modules` would be scanned on every build.
 - **Paths updated**: `.vscode/settings.json` (`dotnet.defaultSolution`), `.vscode/tasks.json`, README build instructions (run `dotnet publish -c Release` at the root; output under `bin/Release/...`), `docs/SemaphoreSlim.md`.
 - **Verified**: `dotnet publish -c Release` built the frontend and put `index.html` and `assets/` into `publish/wwwroot`; `dotnet build` finished with 0 errors.
+
+### 2026-09-28: Fixed Colors per App in the Active Window Pie Chart
+- **Issue**: `ActiveWindowChart` passed a fixed color array to `backgroundColor`, so colors were assigned by rank; when an app's rank changed, its color changed too.
+- **Fix**: Added `colorForTitle`, which hashes the window title (`hash * 31 + codePoint`, kept 32-bit with `| 0`) into an HSL hue (`hsl(hue, 65%, 60%)`). `backgroundColor` is now mapped per entry, so the same app always gets the same color. `その他` uses a fixed gray (`#c9cbcf`).
+- **Trade-off**: Two titles can hash to similar hues; accepted over a fixed palette, where collisions would be more frequent.
+
+### 2026-09-28 (2): More Distinct Colors in the Active Window Pie Chart
+- **Issue**: With `hsl(hash % 360, ...)`, hues fell anywhere on the wheel, so a day's apps could all land in the blue–green range and be hard to tell apart.
+- **Fix (`ActiveWindowChart.tsx`)**: Replaced `colorForTitle` with `assignColors`. It uses a 9-color palette with well-separated hues. Each title's preferred slot is its FNV-1a hash mod the palette size. On a collision it takes the next free slot, so no two slices in one chart share a color. It falls back to an HSL hue only after the palette runs out.
+- **Stability**: Titles claim slots in name order, not rank order, so a rank change doesn't change which app wins a contested color. An app's color can still change on a day when a colliding app appears. `その他` stays gray; the literal is now the `OTHER_TITLE` constant.
