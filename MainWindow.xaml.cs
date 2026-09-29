@@ -172,6 +172,8 @@ public partial class MainWindow : Window {
 #if DEBUG
         webView.CoreWebView2.Navigate("http://localhost:5173");
 #else
+        // リリースビルドでは F12・Ctrl+Shift+I・右クリックの「検査」から開発者ツールを開けないようにする
+        webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
         webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "app.flowrecord",
             userDataFolder,

@@ -178,3 +178,7 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 ### 2026-09-29: Show Daily Activity Tooltip Anywhere in the Day's Column
 - **Issue**: Short bars were hard to hover, because the tooltip only appeared when the cursor was exactly on a bar.
 - **Fix (`DailyActivityChart.tsx`)**: Added `interaction: { mode: 'index', intersect: false }`. Hovering anywhere along a day's x position now shows that day's usage and sleep time together. README TODO checked off.
+
+### 2026-09-29 (2): Disable DevTools in Release Builds
+- **Change (`MainWindow.xaml.cs`)**: In the `#else` (Release) branch of `InitializeWebView`, set `CoreWebView2.Settings.AreDevToolsEnabled = false` before navigating. F12, Ctrl+Shift+I and the context menu's 「検査」 no longer open DevTools. Debug builds are unchanged.
+- **Verified**: `dotnet build -c Release` — 0 errors, 0 warnings. Not yet checked in the running app.
