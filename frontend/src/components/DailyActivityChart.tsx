@@ -78,6 +78,11 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    // バーの上に正確に乗らなくても、同じ日の列（x軸の位置）にカーソルがあればその日の全データをツールチップに出す
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
     plugins: {
       legend: {
         display: true,

@@ -174,3 +174,7 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **Issue**: With `hsl(hash % 360, ...)`, hues fell anywhere on the wheel, so a day's apps could all land in the blue–green range and be hard to tell apart.
 - **Fix (`ActiveWindowChart.tsx`)**: Replaced `colorForTitle` with `assignColors`. It uses a 9-color palette with well-separated hues. Each title's preferred slot is its FNV-1a hash mod the palette size. On a collision it takes the next free slot, so no two slices in one chart share a color. It falls back to an HSL hue only after the palette runs out.
 - **Stability**: Titles claim slots in name order, not rank order, so a rank change doesn't change which app wins a contested color. An app's color can still change on a day when a colliding app appears. `その他` stays gray; the literal is now the `OTHER_TITLE` constant.
+
+### 2026-09-29: Show Daily Activity Tooltip Anywhere in the Day's Column
+- **Issue**: Short bars were hard to hover, because the tooltip only appeared when the cursor was exactly on a bar.
+- **Fix (`DailyActivityChart.tsx`)**: Added `interaction: { mode: 'index', intersect: false }`. Hovering anywhere along a day's x position now shows that day's usage and sleep time together. README TODO checked off.
