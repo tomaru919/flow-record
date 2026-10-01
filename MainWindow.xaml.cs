@@ -199,8 +199,10 @@ public partial class MainWindow : Window {
             var weekOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;
             var json = await _monitorService.GetDailyBootDurationJsonAsync(weekOffset);
             webView.CoreWebView2.PostWebMessageAsJson(json);
-        } else if (message == "getActiveWindowDurations") {
-            var json = await _monitorService.GetActiveWindowDurationJsonAsync();
+        } else if (message != null && message.StartsWith("getActiveWindowDurations")) {
+            var parts = message.Split(':');
+            var dayOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;
+            var json = await _monitorService.GetActiveWindowDurationJsonAsync(dayOffset);
             webView.CoreWebView2.PostWebMessageAsJson(json);
         }
     }

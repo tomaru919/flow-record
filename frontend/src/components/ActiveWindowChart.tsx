@@ -16,6 +16,18 @@ ChartJS.register(
 
 interface ActiveWindowChartProps {
   activeWindowDurations: ActiveWindowDuration[]
+  dayOffset: number
+  onPrevDay: () => void
+  onNextDay: () => void
+}
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+
+const getDayLabel = (dayOffset: number) => {
+  if (dayOffset === 0) return '今日'
+  const date = new Date()
+  date.setDate(date.getDate() + dayOffset)
+  return `${date.getMonth() + 1}/${date.getDate()} (${WEEKDAYS[date.getDay()]})`
 }
 
 const OTHER_TITLE = 'その他'
@@ -87,7 +99,7 @@ const groupMinorWindows = (durations: ActiveWindowDuration[]) => {
   return [...major, { window_title: OTHER_TITLE, duration_hours: otherHours }]
 }
 
-export default function ActiveWindowChart({ activeWindowDurations }: ActiveWindowChartProps) {
+export default function ActiveWindowChart({ activeWindowDurations, dayOffset, onPrevDay, onNextDay }: ActiveWindowChartProps) {
   const groupedDurations = groupMinorWindows(activeWindowDurations)
 
   const pieChartData = {
@@ -141,9 +153,15 @@ export default function ActiveWindowChart({ activeWindowDurations }: ActiveWindo
 
   return (
     <div className="chart-wrapper pie-chart">
-      <p className="chart-title">今日のアクティブウィンドウ内訳</p>
+      <div className="week-nav">
+        <button className="week-nav-button" onClick={onPrevDay}>{'<'}</button>
+        <p className="chart-title">{getDayLabel(dayOffset)}のアクティブウィンドウ内訳</p>
+        <button className="week-nav-button" onClick={onNextDay} disabled={dayOffset >= 0}>{'>'}</button>
+      </div>
       <div className="pie-canvas-wrapper">
-        <Pie data={pieChartData} options={pieChartOptions} />
+        {groupedDurations.length === 0
+          ? <p className="chart-empty">記録がありません</p>
+          : <Pie data={pieChartData} options={pieChartOptions} />}
       </div>
     </div>
   )

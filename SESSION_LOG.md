@@ -182,3 +182,13 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 ### 2026-09-29 (2): Disable DevTools in Release Builds
 - **Change (`MainWindow.xaml.cs`)**: In the `#else` (Release) branch of `InitializeWebView`, set `CoreWebView2.Settings.AreDevToolsEnabled = false` before navigating. F12, Ctrl+Shift+I and the context menu's 「検査」 no longer open DevTools. Debug builds are unchanged.
 - **Verified**: `dotnet build -c Release` — 0 errors, 0 warnings. Not yet checked in the running app.
+
+### 2026-09-30: Browse Past Days in the Active Window Pie Chart
+- **Backend**: `GetActiveWindowDurationJsonAsync` takes `dayOffset` (0 = today, -1 = yesterday) and shifts the queried day; the SQL is unchanged. `MainWindow` parses `getActiveWindowDurations:{offset}`, the same way as `getBootDurations:{offset}`.
+- **Frontend**: `App.tsx` holds `dayOffset` and passes `onPrevDay` / `onNextDay` to `ActiveWindowChart`, which shows `<` / `>` buttons and a title such as `9/29 (月)のアクティブウィンドウ内訳`. `>` is disabled on today. A day with no rows shows `記録がありません`.
+- **Bug fixed along the way**: The `refresh` message handler is created once in `useEffect`, so it kept the first render's `refreshData` and always requested week 0. Offsets are now also kept in refs (`weekOffsetRef`, `dayOffsetRef`), so a refresh reloads the week and day being shown.
+- **Known limit**: A window row is counted on the day it started; time past midnight is cut off and not carried to the next day (unchanged behavior).
+- **Verified**: `tsc -b`, `eslint` and `dotnet build` pass. Not yet checked in the running app.
+
+### 2026-10-01: Rename `today` / `tomorrow` in the Active Window Query
+- **Change (`MonitorService.cs`)**: In `GetActiveWindowDurationJsonAsync`, renamed `today` / `tomorrow` to `dayStart` / `dayEnd` (SQL parameters `@dayStart` / `@dayEnd`). With `dayOffset`, the variables no longer always mean today and tomorrow. Behavior is unchanged; `dotnet build` passes.

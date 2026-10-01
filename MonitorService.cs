@@ -564,33 +564,34 @@ ORDER BY ds.date ASC";
         }
     }
 
-    public async Task<string> GetActiveWindowDurationJsonAsync() {
+    // dayOffset: 0 が今日、-1 が昨日
+    public async Task<string> GetActiveWindowDurationJsonAsync(int dayOffset = 0) {
         try {
             if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
 
-            // 今日の0時から明日（今日+1日）の0時までの範囲で計算
-            var today = DateTime.Today;
-            var tomorrow = today.AddDays(1);
+            // 対象日の0時から翌日の0時までの範囲で計算
+            var dayStart = DateTime.Today.AddDays(dayOffset);
+            var dayEnd = dayStart.AddDays(1);
             var now = DateTime.Now;
 
             // @now まで表示中とみなしてよいのは _currentWindowRecordId の行だけ。他の end_time NULL 行は孤立（強制終了等）のため start_time にフォールバックする
             const string query = @"
 SELECT
     window_title,
-    SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @tomorrow)) - julianday(start_time)) * 24.0) AS duration_hours
+    SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @dayEnd)) - julianday(start_time)) * 24.0) AS duration_hours
 FROM active_window
-WHERE start_time >= @today
-  AND start_time < @tomorrow
+WHERE start_time >= @dayStart
+  AND start_time < @dayEnd
 GROUP BY window_title
-HAVING SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @tomorrow)) - julianday(start_time)) * 24.0) > 0
+HAVING SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @dayEnd)) - julianday(start_time)) * 24.0) > 0
 ORDER BY duration_hours DESC";
 
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@now", now);
-            cmd.Parameters.AddWithValue("@today", today);
-            cmd.Parameters.AddWithValue("@tomorrow", tomorrow);
+            cmd.Parameters.AddWithValue("@dayStart", dayStart);
+            cmd.Parameters.AddWithValue("@dayEnd", dayEnd);
             cmd.Parameters.AddWithValue("@currentWindowRecordId", (object?)_currentWindowRecordId ?? DBNull.Value);
 
             await using var reader = await cmd.ExecuteReaderAsync();

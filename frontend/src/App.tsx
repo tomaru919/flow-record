@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import DailyActivityChart from './components/DailyActivityChart'
 import ActiveWindowChart from './components/ActiveWindowChart'
@@ -14,6 +14,11 @@ export default function App() {
   const [bootDurations, setBootDurations] = useState<BootDuration[]>([])
   const [activeWindowDurations, setActiveWindowDurations] = useState<ActiveWindowDuration[]>([])
   const [weekOffset, setWeekOffset] = useState(0)
+  const [dayOffset, setDayOffset] = useState(0)
+  // useEffect 内のメッセージハンドラは最初の描画時の refreshData を持ち続けるので、
+  // state を直接読むと常に初期値の 0 になる。最新の値を読めるよう ref にも入れておく
+  const weekOffsetRef = useRef(0)
+  const dayOffsetRef = useRef(0)
 
   const requestBootDurations = (offset: number) => {
     if (window.chrome?.webview) {
@@ -21,27 +26,46 @@ export default function App() {
     }
   }
 
+  const requestActiveWindowDurations = (offset: number) => {
+    if (window.chrome?.webview) {
+      window.chrome.webview.postMessage(`getActiveWindowDurations:${offset}`)
+    }
+  }
+
   const refreshData = () => {
     if (window.chrome?.webview) {
       window.chrome.webview.postMessage('getActiveWindowRecords')
-      requestBootDurations(weekOffset)
-      window.chrome.webview.postMessage('getActiveWindowDurations')
+      requestBootDurations(weekOffsetRef.current)
+      requestActiveWindowDurations(dayOffsetRef.current)
     } else {
       console.warn("Not running in WebView2")
     }
   }
 
-  const handlePrevWeek = () => {
-    const newOffset = weekOffset - 1
+  const changeWeek = (newOffset: number) => {
+    weekOffsetRef.current = newOffset
     setWeekOffset(newOffset)
     requestBootDurations(newOffset)
   }
 
+  const handlePrevWeek = () => changeWeek(weekOffset - 1)
+
   const handleNextWeek = () => {
     if (weekOffset >= 0) return
-    const newOffset = weekOffset + 1
-    setWeekOffset(newOffset)
-    requestBootDurations(newOffset)
+    changeWeek(weekOffset + 1)
+  }
+
+  const changeDay = (newOffset: number) => {
+    dayOffsetRef.current = newOffset
+    setDayOffset(newOffset)
+    requestActiveWindowDurations(newOffset)
+  }
+
+  const handlePrevDay = () => changeDay(dayOffset - 1)
+
+  const handleNextDay = () => {
+    if (dayOffset >= 0) return
+    changeDay(dayOffset + 1)
   }
 
   useEffect(() => {
@@ -84,7 +108,12 @@ export default function App() {
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}
         />
-        <ActiveWindowChart activeWindowDurations={activeWindowDurations} />
+        <ActiveWindowChart
+          activeWindowDurations={activeWindowDurations}
+          dayOffset={dayOffset}
+          onPrevDay={handlePrevDay}
+          onNextDay={handleNextDay}
+        />
       </div>
       
       <div className="table-wrapper">
