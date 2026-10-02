@@ -192,3 +192,9 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 
 ### 2026-10-01: Rename `today` / `tomorrow` in the Active Window Query
 - **Change (`MonitorService.cs`)**: In `GetActiveWindowDurationJsonAsync`, renamed `today` / `tomorrow` to `dayStart` / `dayEnd` (SQL parameters `@dayStart` / `@dayEnd`). With `dayOffset`, the variables no longer always mean today and tomorrow. Behavior is unchanged; `dotnet build` passes.
+
+### 2026-10-02: Release from GitHub
+- **Change**: Added `.github/workflows/release.yml`. Pushing a `v*` tag runs the workflow on `windows-latest`: it sets up .NET 10.0.x and Node 24 (npm cache), runs `npm ci` in `frontend`, then `dotnet publish -c Release -p:Version=<tag without v> -o publish`, which also builds the frontend via `PublishFrontend`. It removes `*.pdb` / `*.xml`, zips the output as `FlowRecord-<tag>-win-x64.zip`, and publishes it with `softprops/action-gh-release@v2` (`generate_release_notes: true`, `permissions: contents: write`).
+- **No secrets needed**: The untracked `.env` only holds old Supabase credentials and is not read by the current code.
+- **Verified locally**: Ran the publish and zip steps with `-p:Version=0.9.0`. The zip contains `FlowRecord.exe` (~177 MB, self-contained single file) and `wwwroot/` (`index.html`, `assets/`), and the exe's ProductVersion is `0.9.0+<commit>`. The workflow itself has not run on GitHub yet.
+- README: added a release section and checked off the TODO.

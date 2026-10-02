@@ -1,0 +1,53 @@
+# v から始まるタグ（例: v1.0.0）を push すると、ビルドして GitHub Releases に zip を公開する
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# リリースの作成とファイルのアップロードにはリポジトリへの書き込み権限が必要
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # WPF / WebView2 の Windows 向けアプリなので Windows のランナーでビルドする
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # package-lock.json どおりの版を入れる。node_modules ができるので csproj 側の npm install は省略される
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # タグ名の先頭の v を外してアプリのバージョンにする（v1.2.0 → 1.2.0）
+      - name: Publish
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          dotnet publish -c Release -p:Version=$version -o publish
+
+      # デバッグ情報（.pdb）と WebView2 のドキュメント（.xml）は実行に不要なので zip に入れない
+      - name: Create zi p
+        shell: pwsh
+        run: |
+          Get-ChildItem publish -Include *.pdb, *.xml -Recurse | Remove-Item
+          Compress-Archive -Path publish/* -DestinationPath "FlowRecord-${{ github.ref_name }}-win-x64.zip"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: FlowRecord-${{ github.ref_name }}-win-x64.zip
+          generate_release_notes: true
