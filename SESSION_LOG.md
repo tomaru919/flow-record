@@ -198,3 +198,9 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **No secrets needed**: The untracked `.env` only holds old Supabase credentials and is not read by the current code.
 - **Verified locally**: Ran the publish and zip steps with `-p:Version=0.9.0`. The zip contains `FlowRecord.exe` (~177 MB, self-contained single file) and `wwwroot/` (`index.html`, `assets/`), and the exe's ProductVersion is `0.9.0+<commit>`. The workflow itself has not run on GitHub yet.
 - README: added a release section and checked off the TODO.
+
+### 2026-10-02 (2): Fix Release Workflow Warnings
+- **NETSDK1194**: On the runner (SDK 10.0.401), `dotnet publish` with no path built `FlowRecord.sln` (the root holds both the `.sln` and the `.csproj`), and `-o` is not supported for solutions. The workflow now runs `dotnet publish FlowRecord.csproj ...`.
+- **Node 20 deprecation**: Bumped the actions to their latest majors, all `runs.using: node24` (checked in each repo's `action.yml`): `actions/checkout@v7`, `actions/setup-dotnet@v6`, `actions/setup-node@v7`, `softprops/action-gh-release@v3`. Their release notes list no breaking changes for the inputs used here.
+- Also fixed the step name `Create zi p` → `Create zip`.
+- **Verified locally**: `dotnet publish FlowRecord.csproj -c Release -p:Version=0.9.1 -o <dir>` builds with no warnings. The workflow has not been re-run on GitHub yet.
