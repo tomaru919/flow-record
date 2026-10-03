@@ -27,6 +27,13 @@
     <Resource Include="app.ico" />
   </ItemGroup>
 
+  <!-- WPF SDK が自動で ApplicationDefinition にするのはルート直下の App.xaml だけなので、src\ に移した App.xaml を明示する。
+       明示しないと普通の Page 扱いになり、Main メソッドが生成されない（CS5001） -->
+  <ItemGroup>
+    <Page Remove="src\App.xaml" />
+    <ApplicationDefinition Include="src\App.xaml" />
+  </ItemGroup>
+
   <PropertyGroup>
     <FrontendDir>$(MSBuildProjectDirectory)\frontend\</FrontendDir>
     <!-- csproj はフォルダ内のファイルを自動で取り込むので、C# と関係ないフォルダは対象外にする（node_modules を走査するとビルドが遅くなる） -->

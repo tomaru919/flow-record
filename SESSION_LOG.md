@@ -204,3 +204,9 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **Node 20 deprecation**: Bumped the actions to their latest majors, all `runs.using: node24` (checked in each repo's `action.yml`): `actions/checkout@v7`, `actions/setup-dotnet@v6`, `actions/setup-node@v7`, `softprops/action-gh-release@v3`. Their release notes list no breaking changes for the inputs used here.
 - Also fixed the step name `Create zi p` → `Create zip`.
 - **Verified locally**: `dotnet publish FlowRecord.csproj -c Release -p:Version=0.9.1 -o <dir>` builds with no warnings. The workflow has not been re-run on GitHub yet.
+
+### 2026-10-04: Move C# Sources to `src/`
+- **Change**: Moved `App.xaml(.cs)`, `MainWindow.xaml(.cs)`, `AssemblyInfo.cs`, `MonitorService.cs` and `PowerLogger.cs` into `src/` with `git mv`. `FlowRecord.csproj`, `FlowRecord.sln` and `app.ico` stay at the root. The SDK's default globs pick up `src/**/*.cs` and `src/**/*.xaml`, so the files need no explicit listing.
+- **`App.xaml`**: The WPF SDK only makes `App.xaml` at the project root an `ApplicationDefinition` (`Microsoft.NET.Sdk.WindowsDesktop.props`). In `src/` it became a plain `Page`, so no `Main` was generated (CS5001). The csproj now has `<Page Remove="src\App.xaml" />` and `<ApplicationDefinition Include="src\App.xaml" />`. `EnableDefaultApplicationDefinition=false` was tried and dropped, because it also disables the default `None Remove="**/*.xaml"`.
+- **Icon**: `MainWindow.xaml`'s `Icon="app.ico"` is resolved relative to the XAML file, so it would point at `src/app.ico` after the move. Changed it to `Icon="/app.ico"`, the assembly root, which is the same resource `App.xaml.cs` loads via `pack://application:,,,/app.ico`.
+- **Verified**: `dotnet build --no-incremental` and `dotnet publish FlowRecord.csproj -c Release` pass with 0 errors / 0 warnings. The app was not launched: running a copy from another folder would re-register the startup entry to that path.
