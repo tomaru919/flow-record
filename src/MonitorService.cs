@@ -13,6 +13,17 @@ public partial class MonitorService {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [LibraryImport("kernel32.dll")] private static partial IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
+    // char を UTF-16（Windows の W 版 API の文字形式）として渡すことを明示する。LibraryImport は文字の形式を暗黙に決めない
+    [LibraryImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool QueryFullProcessImageName(IntPtr hProcess, uint dwFlags, [Out] char[] lpExeName, ref uint lpdwSize);
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseHandle(IntPtr hObject);
+
+    // 管理者権限で動くアプリ（タスクマネージャーなど）でも exe のパスだけは読める最小限の権限
+    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
     private string currentWindow = "";
     private DateTime windowStartTime = DateTime.Now;
@@ -26,6 +37,8 @@ public partial class MonitorService {
     // 監視ループ（バックグラウンド）とスリープ通知（UIスレッド）の両方が currentWindow/_currentWindowRecordId を書き換えるため排他する
     private readonly SemaphoreSlim _windowLock = new(1, 1);
     private volatile bool _isSuspended;
+    // このセッションで表示名を保存済みのプロセス名。ウィンドウが切り替わるたびに DB へ書かないようにする
+    private readonly HashSet<string> _savedDisplayNames = [];
 
     private static string AppDataDir =>
         Path.Combine(
@@ -80,7 +93,13 @@ CREATE TABLE IF NOT EXISTS sleep_wake (
 );
 
 CREATE INDEX IF NOT EXISTS idx_active_window_start_time ON active_window (start_time DESC);
-CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_time DESC);";
+CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_time DESC);
+
+-- active_window.window_title にはプロセス名（例: Code）を記録し、表示用の名前（例: Visual Studio Code）はここで対応付ける
+CREATE TABLE IF NOT EXISTS app_name (
+    process_name TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL
+);";
 
         using var cmd = new SqliteCommand(schema, conn);
         cmd.ExecuteNonQuery();
@@ -107,7 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
                 try {
                     // スリープ中は記録しない（Modern Standbyではプロセスが完全には凍結されないことがある）
                     if (!_isSuspended) {
-                        string activeWindow = GetActiveWindowTitle();
+                        string activeWindow = GetActiveWindowTitle(out var processId);
                         if (activeWindow != currentWindow) {
                             if (!string.IsNullOrEmpty(currentWindow)) {
                                 await CloseCurrentWindowAsync(DateTime.Now);
@@ -115,6 +134,9 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
                                 _currentWindowRecordId = null;
                             }
                             if (!string.IsNullOrEmpty(activeWindow)) {
+                                if (processId != 0 && !_savedDisplayNames.Contains(activeWindow)) {
+                                    await SaveDisplayNameAsync(activeWindow, processId);
+                                }
                                 currentWindow = activeWindow;
                                 windowStartTime = DateTime.Now;
                                 _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
@@ -129,20 +151,65 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
         }
     }
 
-    private static string GetActiveWindowTitle() {
+    // processId はプロセス名を取得できたときだけ設定する（取得できずウィンドウのタイトルを返したときは 0）
+    private static string GetActiveWindowTitle(out uint processId) {
+        processId = 0;
         IntPtr handle = GetForegroundWindow();
         var className = new StringBuilder(256);
         _ = GetClassName(handle, className, 256);
         if (className.ToString() is "Progman" or "WorkerW") return "";
         StringBuilder text = new(256);
         if (GetWindowText(handle, text, 256) > 0) {
-            _ = GetWindowThreadProcessId(handle, out var processId);
+            _ = GetWindowThreadProcessId(handle, out var pid);
             try {
-                Process process = Process.GetProcessById((int)processId);
+                Process process = Process.GetProcessById((int)pid);
+                processId = pid;
                 return process.ProcessName;
             } catch { return text.ToString(); }
         }
         return "";
+    }
+
+    // タスクマネージャーと同じく、exe の「ファイルの説明」をアプリの表示名にする（例: Code.exe → Visual Studio Code）
+    private static string? GetDisplayName(uint processId) {
+        // Process.MainModule は管理者権限のプロセスに対して例外になるため、制限付きの権限で exe のパスだけを取得する
+        IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+        if (hProcess == IntPtr.Zero) return null;
+        try {
+            var buffer = new char[1024];
+            uint size = (uint)buffer.Length;
+            if (!QueryFullProcessImageName(hProcess, 0, buffer, ref size)) return null;
+            var path = new string(buffer, 0, (int)size);
+            Debug.WriteLine($"GetDisplayName: processId={processId}, path={path}");
+            var description = FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim();
+            return string.IsNullOrEmpty(description) ? null : description;
+        } catch {
+            return null;
+        } finally {
+            CloseHandle(hProcess);
+        }
+    }
+
+    private async Task SaveDisplayNameAsync(string processName, uint processId) {
+        var displayName = GetDisplayName(processId);
+        // 取得できなかったときは次に切り替わったときに再挑戦するため、保存済みにしない
+        if (displayName == null || string.IsNullOrWhiteSpace(connectionString)) return;
+        try {
+            await using var conn = new SqliteConnection(connectionString);
+            await conn.OpenAsync();
+            // アプリの更新で説明が変わることもあるので、既にある行も上書きする
+            const string query = @"
+INSERT INTO app_name (process_name, display_name)
+VALUES (@process_name, @display_name)
+ON CONFLICT (process_name) DO UPDATE SET display_name = excluded.display_name";
+            await using var cmd = new SqliteCommand(query, conn);
+            cmd.Parameters.AddWithValue("@process_name", processName);
+            cmd.Parameters.AddWithValue("@display_name", displayName);
+            await cmd.ExecuteNonQueryAsync();
+            _savedDisplayNames.Add(processName);
+        } catch (Exception ex) {
+            Debug.WriteLine($"SaveDisplayNameAsync error: {ex.Message}");
+        }
     }
 
     // Modern Standbyの短時間suspend/resumeに対応：未確定行があれば最初のスリープ時刻を保持する
@@ -459,10 +526,11 @@ WHERE id = @id AND end_time IS NULL";
             const string query = @"
 SELECT
     'active_window' AS event_type,
-    aw.window_title,
+    COALESCE(n.display_name, aw.window_title) AS window_title,
     aw.start_time,
     aw.end_time
 FROM active_window aw
+LEFT JOIN app_name n ON n.process_name = aw.window_title
 UNION ALL
 SELECT
     'startup' AS event_type,
@@ -576,16 +644,18 @@ ORDER BY ds.date ASC";
             var dayEnd = dayStart.AddDays(1);
             var now = DateTime.Now;
 
-            // @now まで表示中とみなしてよいのは _currentWindowRecordId の行だけ。他の end_time NULL 行は孤立（強制終了等）のため start_time にフォールバックする
+            // @now まで表示中とみなしてよいのは _currentWindowRecordId の行だけ。他の end_time NULL 行は孤立（強制終了等）のため start_time にフォールバックする。
+            // 表示名（app_name）があればそれで集計し、なければ記録したプロセス名のまま表示する
             const string query = @"
 SELECT
-    window_title,
-    SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @dayEnd)) - julianday(start_time)) * 24.0) AS duration_hours
-FROM active_window
-WHERE start_time >= @dayStart
-  AND start_time < @dayEnd
-GROUP BY window_title
-HAVING SUM((julianday(MIN(COALESCE(end_time, CASE WHEN id = @currentWindowRecordId THEN @now ELSE start_time END), @dayEnd)) - julianday(start_time)) * 24.0) > 0
+    COALESCE(n.display_name, aw.window_title) AS window_title,
+    SUM((julianday(MIN(COALESCE(aw.end_time, CASE WHEN aw.id = @currentWindowRecordId THEN @now ELSE aw.start_time END), @dayEnd)) - julianday(aw.start_time)) * 24.0) AS duration_hours
+FROM active_window aw
+LEFT JOIN app_name n ON n.process_name = aw.window_title
+WHERE aw.start_time >= @dayStart
+  AND aw.start_time < @dayEnd
+GROUP BY COALESCE(n.display_name, aw.window_title)
+HAVING duration_hours > 0
 ORDER BY duration_hours DESC";
 
             await using var cmd = new SqliteCommand(query, conn);
