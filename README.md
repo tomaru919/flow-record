@@ -85,8 +85,11 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-### claude code
+### claude code (laptop)
 claude --resume 70bb0693-ffd9-4be3-bfe0-ab0b391d530f
 
-### claude code (database session)
+### claude code (laptop database session)
 claude --resume 42e29d22-d539-4f8a-8baa-5411d7f97531
+
+### claude code (desktop database session)
+claude --resume 120d523b-c622-48ec-abae-5674aaec580c

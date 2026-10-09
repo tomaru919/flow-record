@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "FlowRecord (Vite + .NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "start debug",
+            "postDebugTask": "stop vite dev",
+            "program": "${workspaceFolder}/bin/Debug/net10.0-windows/win-x64/FlowRecord.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ]
+}

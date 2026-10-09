@@ -217,3 +217,11 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **Queries**: `GetActiveWindowDurationJsonAsync` and `GetRecordsJsonAsync` `LEFT JOIN app_name` and show `COALESCE(display_name, window_title)`. The duration query groups by that expression. `active_window.window_title` still stores the process name, so past rows also show the friendly name once that app has been seen again.
 - **P/Invoke**: `QueryFullProcessImageNameW` takes `[Out] char[]`, which `LibraryImport` only marshals with `StringMarshalling = StringMarshalling.Utf16` (otherwise SYSLIB1051).
 - **Verified**: Compiles (the Debug exe copy failed only because FlowRecord.exe was running). Ran the new duration SQL on a copy of the release DB with sample `app_name` rows: `Code` was shown as `Visual Studio Code`, and unmapped names fell back to the process name. Checked the limited-access path lookup from PowerShell against `Code`. Task Manager was not running, so the elevated case wasn't tested.
+
+### 2026-10-09: Start Vite Before .NET on F5
+- **Change (`.vscode/launch.json`, new)**: A `coreclr` launch config `FlowRecord (Vite + .NET)` runs `bin/Debug/net10.0-windows/win-x64/FlowRecord.exe`, with `preLaunchTask: start debug` and `postDebugTask: stop vite dev`.
+- **Change (`.vscode/tasks.json`)**: Added the background task `vite dev` (`npm run dev` in `frontend`). Its problem matcher treats Vite's `VITE vX.Y.Z  ready in N ms` line as ready, so the next task only starts after the server is up. `start debug` runs `vite dev` then `build FlowRecord` in sequence. `stop vite dev` calls `workbench.action.tasks.terminate` with `vite dev` through a command input, which stops the server when debugging ends.
+- **Change (`frontend/vite.config.ts`)**: `server: { port: 5173, strictPort: true }`. The DEBUG build always loads `http://localhost:5173`, so Vite now fails rather than switching to another port if 5173 is busy.
+- **Verified**: Checked that `npm run dev` prints `VITE` and `ready in` as plain text inside its color codes. F5 itself was not run in VS Code.
+- **Fix**: The background matcher property was misspelled `activeBegin`; the schema name is `activeOnStart`.
+- **Fix**: With Git Bash as the default terminal, `build FlowRecord` (a `shell` task) lost the backslashes in `${workspaceFolder}` (`C:Userstaku_programming...`, MSB1009). Changed it to `"type": "process"` so `dotnet` runs without a shell.

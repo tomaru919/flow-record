@@ -3,7 +3,9 @@
     "tasks": [
         {
             "label": "build FlowRecord",
-            "type": "shell",
+            // シェルを通さずに直接 dotnet を起動する（既定のターミナルが Git Bash だと
+            // ${workspaceFolder} の C:\Users\... のバックスラッシュがエスケープとして消えるため）
+            "type": "process",
             "command": "dotnet",
             "args": [
                 "build",
@@ -11,6 +13,53 @@
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary"
             ]
+        },
+        {
+            // DEBUG ビルドの WebView2 が読み込む http://localhost:5173 を立ち上げる
+            "label": "vite dev",
+            "type": "shell",
+            "command": "npm",
+            "args": ["run", "dev"],
+            "options": {
+                "cwd": "${workspaceFolder}/frontend"
+            },
+            "isBackground": true,
+            // Vite が "VITE vX.Y.Z  ready in N ms" を出したら起動完了とみなし、次のタスクへ進む
+            "problemMatcher": {
+                "owner": "vite",
+                "pattern": {
+                    "regexp": "^__never_match__$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "VITE",
+                    "endsPattern": "ready in"
+                }
+            }
+        },
+        {
+            // F5 の preLaunchTask。Vite サーバーを先に起動してから .NET をビルドする
+            "label": "start debug",
+            "dependsOrder": "sequence",
+            "dependsOn": ["vite dev", "build FlowRecord"]
+        },
+        {
+            // F5 の postDebugTask。デバッグ終了時に Vite サーバーを止める
+            "label": "stop vite dev",
+            "command": "echo ${input:terminateViteDev}",
+            "type": "shell",
+            "presentation": {
+                "reveal": "never"
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "terminateViteDev",
+            "type": "command",
+            "command": "workbench.action.tasks.terminate",
+            "args": "vite dev"
         }
     ]
 }
