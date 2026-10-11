@@ -47,6 +47,13 @@
   min-height: 0;
 }
 
+/* Recharts はキーボードで操作できるようにグラフの svg（と扇形）をフォーカス可能にしているので、
+   クリックするとブラウザーのフォーカス枠が出る。マウスでのフォーカスだけ枠を消し、
+   Tab キーでのフォーカス（:focus-visible）では枠を残して、どこを操作しているかわかるようにする */
+.recharts-wrapper :focus:not(:focus-visible) {
+  outline: none;
+}
+
 .pie-chart {
   flex: 0.8;
 }
