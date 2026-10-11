@@ -7,7 +7,6 @@ import {
   Tooltip,
   Legend,
   type TooltipItem,
-  type ScriptableContext,
 } from "chart.js"
 import { Bar } from "react-chartjs-2"
 import type { BootDuration } from "../types"
@@ -41,7 +40,6 @@ const getWeekRangeLabel = (weekOffset: number) => {
 
 export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWeek, onNextWeek }: DailyActivityChartProps) {
   const awakeHours = bootDurations.map(d => Math.max(0, d.total_hours - d.sleep_hours))
-  const sleepHours = bootDurations.map(d => d.sleep_hours)
 
   const chartData = {
     labels: bootDurations.map(d => {
@@ -53,26 +51,13 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
         label: '使用時間',
         data: awakeHours,
         backgroundColor: '#36a2eb',
-        // スリープ時間がない日は使用時間がバーの先頭になるので、上の角も丸める
-        borderRadius: (ctx: ScriptableContext<'bar'>) => {
-          const top = sleepHours[ctx.dataIndex] > 0 ? 0 : 4
-          return { topLeft: top, topRight: top, bottomLeft: 4, bottomRight: 4 }
-        },
+        borderRadius: 4,
         hoverBackgroundColor: '#2980b9',
-        stack: 'usage',
-      },
-      {
-        label: 'スリープしていた時間',
-        data: sleepHours,
-        backgroundColor: '#4caf50',
-        borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
-        hoverBackgroundColor: '#3d8b40',
-        stack: 'usage',
       }
     ]
   }
 
-  const maxHours = Math.max(...bootDurations.map(d => d.total_hours), 0)
+  const maxHours = Math.max(...awakeHours, 0)
   const stepSize = maxHours > 1.5 ? 30 / 60 : 10 / 60
 
   const chartOptions = {
@@ -85,7 +70,7 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
     },
     plugins: {
       legend: {
-        display: true,
+        display: false,
         position: 'top' as const,
         labels: {
           boxWidth: 12,
@@ -118,7 +103,6 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
     },
     scales: {
       x: {
-        stacked: true,
         grid: {
           display: false,
         },
@@ -129,7 +113,6 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
         }
       },
       y: {
-        stacked: true,
         beginAtZero: true,
         grid: {
           color: 'rgba(200, 200, 200, 0.1)',
