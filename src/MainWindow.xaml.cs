@@ -167,6 +167,9 @@ public partial class MainWindow : Window {
     private async void InitializeWebView() {
         await webView.EnsureCoreWebView2Async();
 
+        // タッチ操作のピンチによる拡大縮小を無効にする
+        webView.CoreWebView2.Settings.IsPinchZoomEnabled = false;
+
         var userDataFolder = Path.Combine(AppContext.BaseDirectory, "wwwroot");
 
 #if DEBUG
