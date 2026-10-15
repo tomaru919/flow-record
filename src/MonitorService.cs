@@ -5,14 +5,15 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using FlowRecord.Logging;
+using System.Drawing.Imaging;
 
 namespace FlowRecord.Monitor;
 
 public partial class MonitorService {
     [LibraryImport("user32.dll")] private static partial IntPtr GetForegroundWindow();
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
     [LibraryImport("kernel32.dll")] private static partial IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
     // char を UTF-16（Windows の W 版 API の文字形式）として渡すことを明示する。LibraryImport は文字の形式を暗黙に決めない
     [LibraryImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", StringMarshalling = StringMarshalling.Utf16)]
@@ -38,7 +39,7 @@ public partial class MonitorService {
     private readonly SemaphoreSlim _windowLock = new(1, 1);
     private volatile bool _isSuspended;
     // このセッションで表示名を保存済みのプロセス名。ウィンドウが切り替わるたびに DB へ書かないようにする
-    private readonly HashSet<string> _savedDisplayNames = [];
+    private readonly HashSet<string> _savedAppInfos = [];
 
     private static string AppDataDir =>
         Path.Combine(
@@ -98,11 +99,19 @@ CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_ti
 -- active_window.window_title にはプロセス名（例: Code）を記録し、表示用の名前（例: Visual Studio Code）はここで対応付ける
 CREATE TABLE IF NOT EXISTS app_name (
     process_name TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL
+    display_name TEXT NOT NULL,
+    icon BLOB NULL
 );";
 
         using var cmd = new SqliteCommand(schema, conn);
         cmd.ExecuteNonQuery();
+
+        using var check = new SqliteCommand(
+            "SELECT COUNT(*) FROM pragma_table_info('app_name') WHERE name = 'icon'", conn);
+        if ((long)check.ExecuteScalar()! == 0) {
+            using var alter = new SqliteCommand("ALTER TABLE app_name ADD COLUMN icon BLOB", conn);
+            alter.ExecuteNonQuery();
+        }
     }
 
     private void Start() {
@@ -134,8 +143,8 @@ CREATE TABLE IF NOT EXISTS app_name (
                                 _currentWindowRecordId = null;
                             }
                             if (!string.IsNullOrEmpty(activeWindow)) {
-                                if (processId != 0 && !_savedDisplayNames.Contains(activeWindow)) {
-                                    await SaveDisplayNameAsync(activeWindow, processId);
+                                if (processId != 0 && !_savedAppInfos.Contains(activeWindow)) {
+                                    await SaveAppInfo(activeWindow, processId);
                                 }
                                 currentWindow = activeWindow;
                                 windowStartTime = DateTime.Now;
@@ -170,9 +179,9 @@ CREATE TABLE IF NOT EXISTS app_name (
         return "";
     }
 
-    // タスクマネージャーと同じく、exe の「ファイルの説明」をアプリの表示名にする（例: Code.exe → Visual Studio Code）
-    private static string? GetDisplayName(uint processId) {
-        // Process.MainModule は管理者権限のプロセスに対して例外になるため、制限付きの権限で exe のパスだけを取得する
+    private sealed record AppInfo(string? DisplayName, byte[]? IconPng);
+
+    private static AppInfo? GetAppInfo(uint processId) {
         IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
         if (hProcess == IntPtr.Zero) return null;
         try {
@@ -180,9 +189,11 @@ CREATE TABLE IF NOT EXISTS app_name (
             uint size = (uint)buffer.Length;
             if (!QueryFullProcessImageName(hProcess, 0, buffer, ref size)) return null;
             var path = new string(buffer, 0, (int)size);
-            Debug.WriteLine($"GetDisplayName: processId={processId}, path={path}");
+
             var description = FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim();
-            return string.IsNullOrEmpty(description) ? null : description;
+            return new AppInfo(
+                string.IsNullOrEmpty(description) ? null : description,
+                GetIconPng(path));
         } catch {
             return null;
         } finally {
@@ -190,25 +201,36 @@ CREATE TABLE IF NOT EXISTS app_name (
         }
     }
 
-    private async Task SaveDisplayNameAsync(string processName, uint processId) {
-        var displayName = GetDisplayName(processId);
-        // 取得できなかったときは次に切り替わったときに再挑戦するため、保存済みにしない
-        if (displayName == null || string.IsNullOrWhiteSpace(connectionString)) return;
+    private static byte[]? GetIconPng(string path) {
+        using var icon = Icon.ExtractAssociatedIcon(path);
+        if (icon is null) return null;
+        using var bmp = icon.ToBitmap();
+        using var stream = new MemoryStream();
+        bmp.Save(stream, ImageFormat.Png);
+        return stream.ToArray();   // ここでコピーを取り出すので、stream が破棄されても配列は残る
+    }
+
+    private async Task SaveAppInfo(string processName, uint processId) {
+        var appInfo = GetAppInfo(processId);
+        if (appInfo == null || string.IsNullOrWhiteSpace(connectionString)) return;
         try {
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
             // アプリの更新で説明が変わることもあるので、既にある行も上書きする
             const string query = @"
-INSERT INTO app_name (process_name, display_name)
-VALUES (@process_name, @display_name)
-ON CONFLICT (process_name) DO UPDATE SET display_name = excluded.display_name";
+INSERT INTO app_name (process_name, display_name, icon)
+VALUES (@process_name, @display_name, @icon)
+ON CONFLICT (process_name) DO UPDATE SET
+    display_name = excluded.display_name,
+    icon = COALESCE(excluded.icon, app_name.icon)";
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@process_name", processName);
-            cmd.Parameters.AddWithValue("@display_name", displayName);
+            cmd.Parameters.AddWithValue("@display_name", appInfo.DisplayName ?? processName);
+            cmd.Parameters.AddWithValue("@icon", (object?)appInfo.IconPng ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync();
-            _savedDisplayNames.Add(processName);
+            _savedAppInfos.Add(processName);
         } catch (Exception ex) {
-            Debug.WriteLine($"SaveDisplayNameAsync error: {ex.Message}");
+            Debug.WriteLine($"SaveAppInfoAsync error: {ex.Message}");
         }
     }
 
@@ -451,7 +473,7 @@ WHERE id = @id AND shutdown_time IS NULL";
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@shutdown_time", shutdownTime);
             cmd.Parameters.AddWithValue("@id", _bootShutdownId.Value);
-            _ = await cmd.ExecuteNonQueryAsync();
+            await cmd.ExecuteNonQueryAsync();
 
             _shutdownRecorded = true;
         } catch (Exception ex) {
@@ -512,7 +534,7 @@ WHERE id = @id AND end_time IS NULL";
             await using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@end_time", endTime);
             cmd.Parameters.AddWithValue("@id", recordId);
-            _ = await cmd.ExecuteNonQueryAsync();
+            await cmd.ExecuteNonQueryAsync();
         } catch (Exception ex) {
             Debug.WriteLine($"CloseActiveWindowAsync DB Error: {ex.Message}");
         }
