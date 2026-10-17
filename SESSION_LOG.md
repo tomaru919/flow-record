@@ -225,3 +225,6 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 - **Verified**: Checked that `npm run dev` prints `VITE` and `ready in` as plain text inside its color codes. F5 itself was not run in VS Code.
 - **Fix**: The background matcher property was misspelled `activeBegin`; the schema name is `activeOnStart`.
 - **Fix**: With Git Bash as the default terminal, `build FlowRecord` (a `shell` task) lost the backslashes in `${workspaceFolder}` (`C:Userstaku_programming...`, MSB1009). Changed it to `"type": "process"` so `dotnet` runs without a shell.
+
+### 2026-10-17: Hide Module Load Messages in the Debug Console
+- **Change (`.vscode/launch.json`)**: Added `"logging": { "moduleLoad": false }` to the `FlowRecord (Vite + .NET)` config. The debug console no longer prints a line for every loaded DLL, so `Debug.WriteLine` output is easier to find.

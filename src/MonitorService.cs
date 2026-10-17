@@ -610,21 +610,21 @@ SELECT
     COALESCE((
         SELECT SUM(
             (MIN(julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)), julianday(datetime(ds.date, '+1 day')))
-             - MAX(julianday(bs.boot_time), julianday(ds.date))) * 24.0
+            - MAX(julianday(bs.boot_time), julianday(ds.date))) * 24.0
         )
         FROM boot_shutdown bs
         WHERE julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
-          AND julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)) >= julianday(ds.date)
+            AND julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)) >= julianday(ds.date)
     ), 0) AS total_hours,
     COALESCE((
         SELECT SUM(
             (MIN(julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)), julianday(datetime(ds.date, '+1 day')))
-             - MAX(julianday(sw.sleep_time), julianday(ds.date))) * 24.0
+            - MAX(julianday(sw.sleep_time), julianday(ds.date))) * 24.0
         )
         FROM sleep_wake sw
         WHERE sw.sleep_time IS NOT NULL
-          AND julianday(sw.sleep_time) < julianday(datetime(ds.date, '+1 day'))
-          AND julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)) >= julianday(ds.date)
+            AND julianday(sw.sleep_time) < julianday(datetime(ds.date, '+1 day'))
+            AND julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)) >= julianday(ds.date)
     ), 0) AS sleep_hours
 FROM ds
 ORDER BY ds.date ASC";
@@ -675,7 +675,7 @@ SELECT
 FROM active_window aw
 LEFT JOIN app_name n ON n.process_name = aw.window_title
 WHERE aw.start_time >= @dayStart
-  AND aw.start_time < @dayEnd
+    AND aw.start_time < @dayEnd
 GROUP BY COALESCE(n.display_name, aw.window_title)
 HAVING duration_hours > 0
 ORDER BY duration_hours DESC";

@@ -10,7 +10,10 @@
             "program": "${workspaceFolder}/bin/Debug/net10.0-windows/win-x64/FlowRecord.exe",
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
-            "stopAtEntry": false
+            "stopAtEntry": false,
+            "logging": {
+                "moduleLoad": false
+            }
         }
     ]
 }
