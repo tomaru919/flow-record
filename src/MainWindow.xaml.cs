@@ -177,6 +177,8 @@ public partial class MainWindow : Window {
 #else
         // リリースビルドでは F12・Ctrl+Shift+I・右クリックの「検査」から開発者ツールを開けないようにする
         webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        // Ctrl+R・F5 の再読み込みや Ctrl+F・Ctrl+P などブラウザー用のショートカットキーを無効にする
+        webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
         webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "app.flowrecord",
             userDataFolder,

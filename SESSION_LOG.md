@@ -228,3 +228,7 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 
 ### 2026-10-17: Hide Module Load Messages in the Debug Console
 - **Change (`.vscode/launch.json`)**: Added `"logging": { "moduleLoad": false }` to the `FlowRecord (Vite + .NET)` config. The debug console no longer prints a line for every loaded DLL, so `Debug.WriteLine` output is easier to find.
+
+### 2026-10-18: Disable Ctrl+R Reload in the Release Build
+- **Change (`MainWindow.xaml.cs`)**: In the `#else` (Release) branch of `InitializeWebView`, set `CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false`. This turns off browser-only shortcuts: reload (Ctrl+R, F5), find (Ctrl+F), print (Ctrl+P), zoom (Ctrl+Plus/Minus), and back/forward. Typing, copying, and pasting still work. The DEBUG build keeps the shortcuts, so reload still works during development.
+- **Verified**: The Release build compiles to the scratchpad. The app was not launched.

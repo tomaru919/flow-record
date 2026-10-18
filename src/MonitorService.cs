@@ -671,7 +671,8 @@ ORDER BY ds.date ASC";
             const string query = @"
 SELECT
     COALESCE(n.display_name, aw.window_title) AS window_title,
-    SUM((julianday(MIN(COALESCE(aw.end_time, CASE WHEN aw.id = @currentWindowRecordId THEN @now ELSE aw.start_time END), @dayEnd)) - julianday(aw.start_time)) * 24.0) AS duration_hours
+    SUM((julianday(MIN(COALESCE(aw.end_time, CASE WHEN aw.id = @currentWindowRecordId THEN @now ELSE aw.start_time END), @dayEnd)) - julianday(aw.start_time)) * 24.0) AS duration_hours,
+    MAX(n.icon) AS icon
 FROM active_window aw
 LEFT JOIN app_name n ON n.process_name = aw.window_title
 WHERE aw.start_time >= @dayStart
@@ -691,7 +692,10 @@ ORDER BY duration_hours DESC";
             while (await reader.ReadAsync()) {
                 results.Add(new {
                     window_title = reader["window_title"].ToString(),
-                    duration_hours = Math.Round(Convert.ToDouble(reader["duration_hours"]), 4)
+                    duration_hours = Math.Round(Convert.ToDouble(reader["duration_hours"]), 4),
+                    icon = reader["icon"] is byte[] bytes
+                        ? "data:image/png;base64," + Convert.ToBase64String(bytes)
+                        : null
                 });
             }
             return JsonSerializer.Serialize(new { type = "activeWindowDurations", data = results });

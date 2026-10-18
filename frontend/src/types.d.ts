@@ -14,6 +14,7 @@ export interface BootDuration {
 export interface ActiveWindowDuration {
   window_title: string
   duration_hours: number
+  icon: string | null
 }
 
 export interface WebViewMessage {
