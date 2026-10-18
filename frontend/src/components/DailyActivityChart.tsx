@@ -27,8 +27,6 @@ interface DayRow {
 
 const AWAKE_COLOR = '#36a2eb'
 const AWAKE_HOVER_COLOR = '#2980b9'
-const SLEEP_COLOR = '#4caf50'
-const SLEEP_HOVER_COLOR = '#3d8b40'
 const BAR_RADIUS = 4
 
 const getWeekRangeLabel = (weekOffset: number) => {
@@ -133,14 +131,6 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
               fill={AWAKE_COLOR}
               shape={renderAwakeBar(AWAKE_COLOR)}
               activeBar={renderAwakeBar(AWAKE_HOVER_COLOR)}
-            />
-            <Bar
-              dataKey="sleep"
-              name="スリープしていた時間"
-              stackId="usage"
-              fill={SLEEP_COLOR}
-              radius={[BAR_RADIUS, BAR_RADIUS, 0, 0]}
-              activeBar={{ fill: SLEEP_HOVER_COLOR }}
             />
           </BarChart>
         </ResponsiveContainer>
