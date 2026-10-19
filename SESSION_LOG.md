@@ -232,3 +232,7 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 ### 2026-10-18: Disable Ctrl+R Reload in the Release Build
 - **Change (`MainWindow.xaml.cs`)**: In the `#else` (Release) branch of `InitializeWebView`, set `CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false`. This turns off browser-only shortcuts: reload (Ctrl+R, F5), find (Ctrl+F), print (Ctrl+P), zoom (Ctrl+Plus/Minus), and back/forward. Typing, copying, and pasting still work. The DEBUG build keeps the shortcuts, so reload still works during development.
 - **Verified**: The Release build compiles to the scratchpad. The app was not launched.
+
+### 2026-10-19: Move the Answer Destination from Google Drive to Notion
+- **Change (Notion)**: Copied the 39 `.md` files from the Google Drive `FlowRecord` folder as child pages of the Notion `FlowRecord` page (`3fd1b689e47e81c4a258e1a3d72fa410`). Tables became Notion tables, and relative links between files became bold text. The Drive originals were left in place.
+- **Change (`CLAUDE.md`)**: The `document` rule now saves answers as child pages of the Notion `FlowRecord` page. The Drive folder is kept as the old location, and no new files go there.

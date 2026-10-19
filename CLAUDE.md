@@ -10,4 +10,4 @@
 セッションごとの変更は `SESSION_LOG.md` に記録する（日付・タイトル・変更内容の要約）。
 
 ## document
-ユーザーの技術的な質問への回答は、Google Drive の MCP で `FlowRecord` フォルダー（ID: `1ejDSCt1Ql64PC99qzHusIPr82MC7qgHr`）に `.md` ファイルとして保存してください（`contentMimeType: text/markdown`、`disableConversionToGoogleType: true`）。リポジトリの `docs/` には保存しません。
+ユーザーの技術的な質問への回答は、Notion の MCP で `FlowRecord` ページ（ID: `3fd1b689e47e81c4a258e1a3d72fa410`）の子ページとして保存してください（タイトルは内容を表す日本語、本文は Notion Markdown）。リポジトリの `docs/` には保存しません。Google Drive の `FlowRecord` フォルダーは移行前の旧保存先で、新しいファイルは追加しません。
