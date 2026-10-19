@@ -1,18 +1,5 @@
-import {
-  Chart as ChartJS,
-  ArcElement,
-  Tooltip,
-  Legend,
-  type TooltipItem,
-} from "chart.js"
-import { Pie } from "react-chartjs-2"
+import { Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 import type { ActiveWindowDuration } from "../types"
-
-ChartJS.register(
-  ArcElement,
-  Tooltip,
-  Legend
-)
 
 interface ActiveWindowChartProps {
   activeWindowDurations: ActiveWindowDuration[]
@@ -99,57 +86,19 @@ const groupMinorWindows = (durations: ActiveWindowDuration[]) => {
   return [...major, { window_title: OTHER_TITLE, duration_hours: otherHours }]
 }
 
+// 1分未満は秒で、それ以上は「X時間Y分」で表示する
+const formatDuration = (hours: number) => {
+  const totalMinutes = Math.round(hours * 60)
+  if (totalMinutes < 1) return `${Math.round(hours * 3600)}秒`
+  return `${Math.floor(totalMinutes / 60)}時間${totalMinutes % 60}分`
+}
+
 export default function ActiveWindowChart({ activeWindowDurations, dayOffset, onPrevDay, onNextDay }: ActiveWindowChartProps) {
   const groupedDurations = groupMinorWindows(activeWindowDurations)
-
-  const pieChartData = {
-    labels: groupedDurations.map(d => d.window_title),
-    datasets: [
-      {
-        data: groupedDurations.map(d => d.duration_hours),
-        backgroundColor: assignColors(groupedDurations.map(d => d.window_title)),
-        borderColor: 'transparent',
-        hoverOffset: 4
-      }
-    ]
-  }
-
-  const pieChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'right' as const,
-        labels: {
-          boxWidth: 12,
-          padding: 15,
-          color: '#888',
-          font: {
-            size: 11
-          }
-        }
-      },
-      tooltip: {
-        callbacks: {
-          label: (context: TooltipItem<'pie'>) => {
-            const value = context.raw as number
-            const total = (context.dataset.data as number[]).reduce((a, b) => a + b, 0)
-            const percentage = ((value / total) * 100).toFixed(1)
-
-            const totalMinutes = Math.round(value * 60)
-            if (totalMinutes < 1) {
-              const totalSeconds = Math.round(value * 3600)
-              return ` ${totalSeconds}秒 (${percentage}%)`
-            }
-
-            const hours = Math.floor(totalMinutes / 60)
-            const minutes = totalMinutes % 60
-            return ` ${hours}時間${minutes}分 (${percentage}%)`
-          }
-        }
-      }
-    }
-  }
+  const colors = assignColors(groupedDurations.map(d => d.window_title))
+  // Pie はデータの各項目の fill を扇形と凡例の色に使うので、色をデータに含めて渡す
+  const pieData = groupedDurations.map((d, i) => ({ ...d, fill: colors[i] }))
+  const total = groupedDurations.reduce((sum, d) => sum + d.duration_hours, 0)
 
   return (
     <div className="chart-wrapper pie-chart">
@@ -161,7 +110,40 @@ export default function ActiveWindowChart({ activeWindowDurations, dayOffset, on
       <div className="pie-canvas-wrapper">
         {groupedDurations.length === 0
           ? <p className="chart-empty">記録がありません</p>
-          : <Pie data={pieChartData} options={pieChartOptions} />}
+          : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="duration_hours"
+                  nameKey="window_title"
+                  outerRadius="85%"
+                  // 既定は3時の位置から反時計回り。12時の位置から時計回りにする
+                  startAngle={90}
+                  endAngle={-270}
+                  stroke="none"
+                />
+                <Tooltip
+                  formatter={(value) => {
+                    const hours = Number(value)
+                    return `${formatDuration(hours)} (${((hours / total) * 100).toFixed(1)}%)`
+                  }}
+                  contentStyle={{ backgroundColor: 'rgba(0, 0, 0, 0.8)', border: 'none', borderRadius: 6 }}
+                  itemStyle={{ color: '#fff', fontSize: 13 }}
+                />
+                <Legend
+                  // 既定では名前順に並ぶので、null で data の順（使用時間が長い順、その他は最後）にする
+                  itemSorter={null}
+                  layout="vertical"
+                  position="right"
+                  iconType="square"
+                  iconSize={12}
+                  wrapperStyle={{ fontSize: 11, lineHeight: '24px' }}
+                  formatter={(value) => <span style={{ color: '#888' }}>{value}</span>}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
       </div>
     </div>
   )
