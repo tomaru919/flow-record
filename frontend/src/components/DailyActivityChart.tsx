@@ -2,13 +2,10 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
-  Rectangle,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  type BarShapeProps,
 } from "recharts"
 import type { BootDuration } from "../types"
 
@@ -22,7 +19,6 @@ interface DailyActivityChartProps {
 interface DayRow {
   label: string
   awake: number
-  sleep: number
 }
 
 const AWAKE_COLOR = '#36a2eb'
@@ -62,24 +58,16 @@ const getTicks = (maxHours: number) => {
   return Array.from({ length: count + 1 }, (_, i) => i * step)
 }
 
-// 使用時間のバーは、その日にスリープ時間がない（＝上に緑のバーが乗らない）ときだけ上の角を丸める
-const renderAwakeBar = (fill: string) => (props: BarShapeProps) => {
-  const row = props.payload as DayRow
-  const top = row.sleep > 0 ? 0 : BAR_RADIUS
-  return <Rectangle {...props} fill={fill} radius={[top, top, 0, 0]} />
-}
-
 export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWeek, onNextWeek }: DailyActivityChartProps) {
   const rows: DayRow[] = bootDurations.map(d => {
     const date = new Date(d.date)
     return {
       label: `${date.getMonth() + 1}/${date.getDate()}`,
       awake: Math.max(0, d.total_hours - d.sleep_hours),
-      sleep: d.sleep_hours,
     }
   })
 
-  const maxHours = Math.max(...bootDurations.map(d => d.total_hours), 0)
+  const maxHours = Math.max(...rows.map(r => r.awake), 0)
   const ticks = getTicks(maxHours)
 
   return (
@@ -107,30 +95,19 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
             />
             {/* Tooltip は既定でカーソルがある日（x軸の位置）の全系列を表示するので、短いバーでも列のどこでも情報が見える */}
             <Tooltip
-              // 既定では名前順に並ぶので、dataKey 順（awake → sleep）にして「使用時間」を先に出す
-              itemSorter="dataKey"
               cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
               formatter={(value) => formatDuration(Number(value))}
               contentStyle={{ backgroundColor: 'rgba(0, 0, 0, 0.8)', border: 'none', borderRadius: 6, padding: 12 }}
               labelStyle={{ color: '#fff', fontSize: 14, marginBottom: 4 }}
               itemStyle={{ fontSize: 13 }}
             />
-            <Legend
-              // 既定では名前順に並ぶので、null で Bar を書いた順（使用時間 → スリープ）にする
-              itemSorter={null}
-              position="top"
-              iconType="square"
-              iconSize={12}
-              wrapperStyle={{ fontSize: 11, paddingBottom: 12 }}
-              formatter={(value) => <span style={{ color: '#888' }}>{value}</span>}
-            />
             <Bar
               dataKey="awake"
               name="使用時間"
               stackId="usage"
               fill={AWAKE_COLOR}
-              shape={renderAwakeBar(AWAKE_COLOR)}
-              activeBar={renderAwakeBar(AWAKE_HOVER_COLOR)}
+              radius={[BAR_RADIUS, BAR_RADIUS, 0, 0]}
+              activeBar={{ fill: AWAKE_HOVER_COLOR }}
             />
           </BarChart>
         </ResponsiveContainer>
