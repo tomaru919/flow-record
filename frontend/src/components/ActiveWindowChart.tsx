@@ -83,7 +83,7 @@ const groupMinorWindows = (durations: ActiveWindowDuration[]) => {
   if (minor.length === 1) return sorted
 
   const otherHours = minor.reduce((sum, d) => sum + d.duration_hours, 0)
-  return [...major, { window_title: OTHER_TITLE, duration_hours: otherHours }]
+  return [...major, { window_title: OTHER_TITLE, duration_hours: otherHours, icon: null }]
 }
 
 // 1分未満は秒で、それ以上は「X時間Y分」で表示する
@@ -98,6 +98,7 @@ export default function ActiveWindowChart({ activeWindowDurations, dayOffset, on
   const colors = assignColors(groupedDurations.map(d => d.window_title))
   // Pie はデータの各項目の fill を扇形と凡例の色に使うので、色をデータに含めて渡す
   const pieData = groupedDurations.map((d, i) => ({ ...d, fill: colors[i] }))
+  const iconByTitle = new Map(groupedDurations.map(d => [d.window_title, d.icon]))
   const total = groupedDurations.reduce((sum, d) => sum + d.duration_hours, 0)
 
   return (
@@ -139,7 +140,15 @@ export default function ActiveWindowChart({ activeWindowDurations, dayOffset, on
                   iconType="square"
                   iconSize={12}
                   wrapperStyle={{ fontSize: 11, lineHeight: '24px' }}
-                  formatter={(value) => <span style={{ color: '#888' }}>{value}</span>}
+                  formatter={(value) => {
+                    const icon = iconByTitle.get(value)
+                    return (
+                      <span style={{ color: '#888', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {icon && <img src={icon} alt="" width={16} height={16} />}
+                        {value}
+                      </span>
+                    )
+                  }}
                 />
               </PieChart>
             </ResponsiveContainer>
