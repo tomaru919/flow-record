@@ -104,7 +104,6 @@ export default function DailyActivityChart({ bootDurations, weekOffset, onPrevWe
             <Bar
               dataKey="awake"
               name="使用時間"
-              stackId="usage"
               fill={AWAKE_COLOR}
               radius={[BAR_RADIUS, BAR_RADIUS, 0, 0]}
               activeBar={{ fill: AWAKE_HOVER_COLOR }}
