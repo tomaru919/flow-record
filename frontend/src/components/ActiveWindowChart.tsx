@@ -1,4 +1,4 @@
-import { Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
+import { Legend, Pie, PieChart, ResponsiveContainer, Tooltip, type TooltipContentProps } from "recharts"
 import type { ActiveWindowDuration } from "../types"
 
 interface ActiveWindowChartProps {
@@ -93,12 +93,27 @@ const formatDuration = (hours: number) => {
   return `${Math.floor(totalMinutes / 60)}時間${totalMinutes % 60}分`
 }
 
+const ActiveWindowTooltip = ({ active, payload, total }: TooltipContentProps & { total: number }) => {
+  if (!active || !payload.length) return null
+  const item = payload[0]
+  const { window_title, icon } = item.payload as ActiveWindowDuration
+  const hours = Number(item.value)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderRadius: 6, color: '#fff', fontSize: 13 }}>
+      {icon && <img src={icon} alt="" width={20} height={20} />}
+      <div>
+        <div>{window_title}</div>
+        <div style={{ color: '#ccc' }}>{formatDuration(hours)} ({((hours / total) * 100).toFixed(1)}%)</div>
+      </div>
+    </div>
+  )
+}
+
 export default function ActiveWindowChart({ activeWindowDurations, dayOffset, onPrevDay, onNextDay }: ActiveWindowChartProps) {
   const groupedDurations = groupMinorWindows(activeWindowDurations)
   const colors = assignColors(groupedDurations.map(d => d.window_title))
   // Pie はデータの各項目の fill を扇形と凡例の色に使うので、色をデータに含めて渡す
   const pieData = groupedDurations.map((d, i) => ({ ...d, fill: colors[i] }))
-  const iconByTitle = new Map(groupedDurations.map(d => [d.window_title, d.icon]))
   const total = groupedDurations.reduce((sum, d) => sum + d.duration_hours, 0)
 
   return (
@@ -124,14 +139,7 @@ export default function ActiveWindowChart({ activeWindowDurations, dayOffset, on
                   endAngle={-270}
                   stroke="none"
                 />
-                <Tooltip
-                  formatter={(value) => {
-                    const hours = Number(value)
-                    return `${formatDuration(hours)} (${((hours / total) * 100).toFixed(1)}%)`
-                  }}
-                  contentStyle={{ backgroundColor: 'rgba(0, 0, 0, 0.8)', border: 'none', borderRadius: 6 }}
-                  itemStyle={{ color: '#fff', fontSize: 13 }}
-                />
+                <Tooltip content={(props) => <ActiveWindowTooltip {...props} total={total} />} />
                 <Legend
                   // 既定では名前順に並ぶので、null で data の順（使用時間が長い順、その他は最後）にする
                   itemSorter={null}
@@ -140,15 +148,7 @@ export default function ActiveWindowChart({ activeWindowDurations, dayOffset, on
                   iconType="square"
                   iconSize={12}
                   wrapperStyle={{ fontSize: 11, lineHeight: '24px' }}
-                  formatter={(value) => {
-                    const icon = iconByTitle.get(value)
-                    return (
-                      <span style={{ color: '#888', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        {icon && <img src={icon} alt="" width={16} height={16} />}
-                        {value}
-                      </span>
-                    )
-                  }}
+                  formatter={(value) => <span style={{ color: '#888' }}>{value}</span>}
                 />
               </PieChart>
             </ResponsiveContainer>
