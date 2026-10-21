@@ -368,7 +368,10 @@ WHERE id = @id";
     public void RecordShutdownSync(DateTime shutdownTime) {
         if (_shutdownRecorded) return;
         if (string.IsNullOrWhiteSpace(connectionString)) return;
+        _windowLock.Wait();
         try {
+            _isSuspended = true;
+            
             _bootShutdownId ??= GetLatestBootRecordIdSync();
             if (!_bootShutdownId.HasValue) return;
 
@@ -377,15 +380,25 @@ WHERE id = @id";
             const string query = @"
 UPDATE boot_shutdown
 SET shutdown_time = @shutdown_time
-WHERE id = @id AND shutdown_time IS NULL";
+WHERE id = @bootShutdownId AND shutdown_time IS NULL;
+
+UPDATE active_window
+SET end_time = @end_time
+WHERE id = @currentWindowRecordId AND end_time IS NULL;";
             using var cmd = new SqliteCommand(query, conn);
             cmd.Parameters.AddWithValue("@shutdown_time", shutdownTime);
-            cmd.Parameters.AddWithValue("@id", _bootShutdownId.Value);
+            cmd.Parameters.AddWithValue("@bootShutdownId", _bootShutdownId.Value);
+            cmd.Parameters.AddWithValue("@end_time", shutdownTime);
+            cmd.Parameters.AddWithValue("@currentWindowRecordId", (object?)_currentWindowRecordId ?? DBNull.Value);
             cmd.ExecuteNonQuery();
 
+            currentWindow = "";
+            _currentWindowRecordId = null;
             _shutdownRecorded = true;
         } catch (Exception ex) {
             Debug.WriteLine($"RecordShutdownSync error: {ex.Message}");
+        } finally {
+            _windowLock.Release();
         }
     }
 

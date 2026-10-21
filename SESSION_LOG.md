@@ -236,3 +236,28 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 ### 2026-10-19: Move the Answer Destination from Google Drive to Notion
 - **Change (Notion)**: Copied the 39 `.md` files from the Google Drive `FlowRecord` folder as child pages of the Notion `FlowRecord` page (`3fd1b689e47e81c4a258e1a3d72fa410`). Tables became Notion tables, and relative links between files became bold text. The Drive originals were left in place.
 - **Change (`CLAUDE.md`)**: The `document` rule now saves answers as child pages of the Notion `FlowRecord` page. The Drive folder is kept as the old location, and no new files go there.
+
+### 2026-10-19: Merge feature/recharts (Chart.js → Recharts)
+- **Change (`feature/recharts`, before merging)**: Cleaned up `DailyActivityChart.tsx`, which still assumed the sleep bar existed.
+  - The bar's top corners are now always rounded with `radius`. The `renderAwakeBar` shape is gone.
+  - The y-axis maximum now uses only `awake`, not `total_hours`.
+  - Removed `Legend`, the `sleep` field, and the Tooltip `itemSorter`.
+  - Later removed `stackId`.
+  - Added `icon: string | null` to `ActiveWindowDuration` in `types.d.ts`.
+- **Change (merge)**: Merged into `main` (`a695204`).
+  - Kept `main`'s version of `SESSION_LOG.md`.
+  - Resolved the `DailyActivityChart.tsx` conflict with the branch's Recharts version.
+- **Verified**: `tsc -b`, `npm run lint`, and `vite build` (output to the scratchpad) passed before the merge. The app was not launched.
+
+### 2026-10-20: Show App Icons in the Active Window Tooltip
+- **Change (`ActiveWindowChart.tsx`)**: Added an `ActiveWindowTooltip` component, passed as the Tooltip's `content`. It shows the app's icon (the `icon` data URL), its name, and its time and percentage.
+  - The icon comes from `payload[0].payload`, the data item of the hovered slice.
+  - `groupMinorWindows` gives the "その他" row `icon: null`.
+
+### 2026-10-20: Close the Current Active Window on OS Shutdown
+- **Problem**: `RecordShutdownSync`, called from `SessionEnding`, only set `boot_shutdown.shutdown_time`. The current `active_window` row kept `end_time = NULL`, so it later counted as an orphan (0 hours). This lost the time of the app used just before shutdown.
+- **Change (`MonitorService.RecordShutdownSync`)**:
+  - The same command now also runs `UPDATE active_window SET end_time = @end_time WHERE id = @currentWindowRecordId AND end_time IS NULL` (Microsoft.Data.Sqlite batching).
+  - The method now holds `_windowLock` and sets `_isSuspended = true`, so the monitoring loop cannot open a new row during shutdown. It also clears `currentWindow` and `_currentWindowRecordId`, like `SuspendMonitoring`.
+- **Known limitation**: If the user cancels the shutdown, monitoring stays paused until the next wake from sleep or app restart. `boot_shutdown` also stays closed.
+- **Verified**: The Release build compiles to the scratchpad. An actual OS shutdown was not tested.
