@@ -287,3 +287,32 @@ FlowRecord の開発セッションごとの変更・修正の記録。
   - **Crash during sleep**: `sleep_wake` is not repaired. Repair needs an estimated wake time (the first `active_window` start after `sleep_time`, capped at the session end), which is not implemented.
   - **Second instance**: There is still no single-instance guard. A second instance would close the running instance's open rows during its own repair. Add a `Mutex` before release.
 - **Verified**: The Release build compiles to the scratchpad with 0 warnings and 0 errors. Neither a real crash nor the repair was tested in the running app.
+
+### 2026-10-22: Turn the Notion Answer Pages into a Searchable Database
+- **Change (Notion)**: Created the `FlowRecord ナレッジ` database under the `FlowRecord` page and moved all 54 answer pages into it, including the nested ones. The two Legend style pages had already been deleted, so they were not moved.
+  - **Properties**:
+    - `名前`: the title.
+    - `カテゴリ`: select, one of `C#・.NET`, `WPF・WebView2`, `Windows API`, `SQLite`, `React・フロントエンド`, `Git`, `ビルド・リリース`, `設計・改善`. Assigned to each page by its title and content.
+    - `親項目` / `サブ項目`: a two-way self-relation that keeps the former nesting.
+    - `作成日時` and `更新日時`.
+  - **Views**: The default table, `新しい順` (newest first, with a カテゴリ quick filter), and `カテゴリ別` (a board grouped by カテゴリ).
+- **Change (`CLAUDE.md`)**: The `document` rule now saves answers as rows of this database (data source `collection://b9890974-7f71-4dfc-b17f-eb3488e88107`). Each row gets a `カテゴリ`, and a follow-up gets `親項目` set to the earlier page.
+
+### 2026-10-22: Prevent a Second Instance with a Named Mutex
+- **Problem**: Nothing stopped a second `FlowRecord.exe`.
+  - The time would be recorded twice, and a second tray icon would appear.
+  - Since the `last_seen` change, a second instance's `RepairOrphanRecords` would also close the running instance's open rows.
+- **Change (`App.xaml.cs`)**: `OnStartup` creates the named mutex `Local\{InstanceName}.Mutex` with `new Mutex(true, ..., out bool createdNew)`. If `createdNew` is false, it disposes the mutex, calls `Shutdown()`, and returns before `MainWindow`, `MonitorService`, or the tray icon are created.
+  - **Field, not local**: The mutex is kept in the `_instanceMutex` field so it lives as long as the app.
+  - **Release on exit**: `OnExit` calls `ReleaseMutex()` and `Dispose()`. `OnStartup` and `OnExit` both run on the UI thread, which owns the mutex.
+  - **Separate names**: `InstanceName` is `FlowRecord.Debug` in DEBUG and `FlowRecord` in Release, since they use different DBs. A Debug session can run next to the installed Release app.
+  - **Crash**: If the process dies, Windows closes the handle, so the next launch gets `createdNew = true`.
+- **Not done**: Launching a second copy doesn't bring the running one's window forward, so it looks like nothing happened. A named `EventWaitHandle` could signal the first instance to call `OnOpenClick`.
+- **Verified**:
+  - Started the Debug build with F5, then launched the same Debug exe with `Start-Process`.
+  - Afterwards only one `FlowRecord.exe` was running: PID 4076, whose parent is `vsdbg-ui`, the F5 instance.
+  - `flowrecord.debug.db` got no new `boot_shutdown` row after the F5 session's row (id 57), so the second process exited before `MonitorService` started.
+  - Not yet checked: relaunching after tray Exit, and relaunching after stopping the debugger.
+
+### 2026-10-22: Remove the Unused System.Management Package
+- **Change (`FlowRecord.csproj`)**: Removed `<PackageReference Include="System.Management" Version="10.0.1" />`. No C# code uses WMI (`System.Management`), and it had been unused since the first commit. Removing it keeps `System.Management.dll` and `System.CodeDom.dll` out of the self-contained single-file exe.

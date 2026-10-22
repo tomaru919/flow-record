@@ -10,9 +10,25 @@ public partial class App : System.Windows.Application {
     private NotifyIcon? _notifyIcon;
     private MainWindow? _mainWindow;
 
+#if DEBUG
+    private const string InstanceName = "FlowRecord.Debug";
+#else
+    private const string InstanceName = "FlowRecord";
+#endif
+
+    private Mutex? _instanceMutex;
+
     protected override void OnStartup(StartupEventArgs e) {
         Debug.WriteLine("FlowRecord launched");
-        
+
+        _instanceMutex = new Mutex(true, $@"Local\{InstanceName}.Mutex", out bool createdNew);
+        if (!createdNew) {
+            _instanceMutex.Dispose();
+            _instanceMutex = null;
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
 
         // PCシャットダウン/ログオフ通知
@@ -78,6 +94,10 @@ public partial class App : System.Windows.Application {
         } catch { }
 
         SessionEnding -= OnSessionEnding;
+        if (_instanceMutex != null) {
+            _instanceMutex.ReleaseMutex();
+            _instanceMutex.Dispose();
+        }
         base.OnExit(e);
     }
 

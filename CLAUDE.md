@@ -10,4 +10,7 @@
 セッションごとの変更は `SESSION_LOG.md` に記録する（日付・タイトル・変更内容の要約）。
 
 ## document
-ユーザーの技術的な質問への回答は、Notion の MCP で `FlowRecord` ページ（ID: `3fd1b689e47e81c4a258e1a3d72fa410`）の子ページとして保存してください（タイトルは内容を表す日本語、本文は Notion Markdown）。リポジトリの `docs/` には保存しません。Google Drive の `FlowRecord` フォルダーは移行前の旧保存先で、新しいファイルは追加しません。
+ユーザーの技術的な質問への回答は、Notion の MCP で `FlowRecord ナレッジ` データベース（データソース: `collection://b9890974-7f71-4dfc-b17f-eb3488e88107`）にページとして保存してください。リポジトリの `docs/` には保存しません。
+- プロパティ: `名前`（内容を表す日本語のタイトル）、`カテゴリ`（`C#・.NET` / `WPF・WebView2` / `Windows API` / `SQLite` / `React・フロントエンド` / `Git` / `ビルド・リリース` / `設計・改善` から 1 つ）。本文は Notion Markdown。
+- 以前の回答の続きなら、`親項目` にそのページを設定する（小さな追記なら元のページの末尾に足す）。
+- Google Drive の `FlowRecord` フォルダーは移行前の旧保存先で、新しいファイルは追加しません。
