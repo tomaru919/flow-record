@@ -40,6 +40,10 @@ public partial class MonitorService {
     private volatile bool _isSuspended;
     // このセッションで表示名を保存済みのプロセス名。ウィンドウが切り替わるたびに DB へ書かないようにする
     private readonly HashSet<string> _savedAppInfos = [];
+    // 強制終了・停電に備えて「最後に動いていた時刻」（last_seen）を DB に書く間隔。落ちたときに失う時間は最大でこの長さになる
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(1);
+    // 最後に last_seen を書いた時刻。MinValue にしておくと、起動直後とスリープ復帰直後の最初のループですぐに書く
+    private DateTime _lastHeartbeat = DateTime.MinValue;
 
     private static string AppDataDir =>
         Path.Combine(
@@ -76,14 +80,16 @@ CREATE TABLE IF NOT EXISTS active_window (
     window_title TEXT NOT NULL,
     start_time TEXT NOT NULL,
     end_time TEXT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    last_seen TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS boot_shutdown (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     boot_time TEXT NOT NULL,
     shutdown_time TEXT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    last_seen TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sleep_wake (
@@ -106,15 +112,28 @@ CREATE TABLE IF NOT EXISTS app_name (
         using var cmd = new SqliteCommand(schema, conn);
         cmd.ExecuteNonQuery();
 
-        using var check = new SqliteCommand(
-            "SELECT COUNT(*) FROM pragma_table_info('app_name') WHERE name = 'icon'", conn);
-        if ((long)check.ExecuteScalar()! == 0) {
-            using var alter = new SqliteCommand("ALTER TABLE app_name ADD COLUMN icon BLOB", conn);
-            alter.ExecuteNonQuery();
-        }
+        // CREATE TABLE IF NOT EXISTS はテーブルが既にあると何もしないので、後から増やした列は既存の DB にここで追加する
+        AddColumnIfMissing(conn, "app_name", "icon", "BLOB");
+        AddColumnIfMissing(conn, "boot_shutdown", "last_seen", "TEXT");
+        AddColumnIfMissing(conn, "active_window", "last_seen", "TEXT");
+    }
+
+    // pragma_table_info でテーブルの列一覧を調べ、指定した列が無ければ ALTER TABLE で追加する。
+    // テーブル名・列名はパラメーターにできない（値にしか使えない）ので文字列に埋め込む。コード内の固定文字列だけを渡すこと
+    private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string definition) {
+        using var check = new SqliteCommand("SELECT COUNT(*) FROM pragma_table_info(@table) WHERE name = @column", conn);
+        check.Parameters.AddWithValue("@table", table);
+        check.Parameters.AddWithValue("@column", column);
+        if ((long)check.ExecuteScalar()! == 1) return;
+
+        using var alter = new SqliteCommand($"ALTER TABLE {table} ADD COLUMN {column} {definition}", conn);
+        alter.ExecuteNonQuery();
     }
 
     private void Start() {
+        // 新しい起動記録やウィンドウの行を作る前に呼ぶ（この時点で終了時刻が NULL の行は、すべて前回までの孤立行）
+        RepairOrphanRecords();
+
         _cts = new CancellationTokenSource();
 
         Task.Run(async () => {
@@ -128,6 +147,27 @@ CREATE TABLE IF NOT EXISTS app_name (
         });
     }
 
+    // 強制終了・停電で終了時刻が NULL のまま残った行を、最後に動いていた時刻（last_seen）で閉じる。
+    // 閉じないと集計で孤立行として開始時刻にフォールバックし、そのセッションやウィンドウが 0 時間になってしまう。
+    // last_seen が NULL の行（last_seen 列を追加する前の行など）は終わった時刻が分からないので、そのまま残す
+    private void RepairOrphanRecords() {
+        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        try {
+            using var conn = new SqliteConnection(connectionString);
+            conn.Open();
+
+            const string query = @"
+UPDATE boot_shutdown SET shutdown_time = last_seen WHERE shutdown_time IS NULL AND last_seen IS NOT NULL;
+UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_seen IS NOT NULL;";
+
+            using var cmd = new SqliteCommand(query, conn);
+            cmd.ExecuteNonQuery();
+        } catch (Exception ex) {
+            // 修復に失敗しても記録は始められるので、起動は止めない
+            Debug.WriteLine($"RepairOrphanRecords error: {ex}");
+        }
+    }
+
     private async Task MonitoringLoop(CancellationToken token) {
         while (!token.IsCancellationRequested) {
             try {
@@ -135,6 +175,14 @@ CREATE TABLE IF NOT EXISTS app_name (
                 try {
                     // スリープ中は記録しない（Modern Standbyではプロセスが完全には凍結されないことがある）
                     if (!_isSuspended) {
+                        // ループは 1 秒ごとに回るが、DB への書き込みを減らすため last_seen は HeartbeatInterval ごとに書く。
+                        // スリープ中は書かない（書くとスリープしていた時間まで使用時間に数えられてしまう）
+                        var now = DateTime.Now;
+                        if (now - _lastHeartbeat >= HeartbeatInterval) {
+                            await UpdateLastSeenAsync(now);
+                            _lastHeartbeat = now;
+                        }
+
                         string activeWindow = GetActiveWindowTitle(out var processId);
                         if (activeWindow != currentWindow) {
                             if (!string.IsNullOrEmpty(currentWindow)) {
@@ -157,6 +205,28 @@ CREATE TABLE IF NOT EXISTS app_name (
                 }
                 await Task.Delay(1000, token);
             } catch (TaskCanceledException) { break; } catch (Exception ex) { Debug.WriteLine($"Error: {ex.Message}"); }
+        }
+    }
+
+    // 現在のセッション（boot_shutdown）と表示中ウィンドウ（active_window）の行に「この時刻まで動いていた」と書く。
+    // 次回起動時に RepairOrphanRecords がこの時刻を終了時刻として使う。
+    // ID が null（デスクトップ表示中などで記録中の行がない）のときは DBNull を渡すので、どの行にも一致せず何もしない
+    private async Task UpdateLastSeenAsync(DateTime now) {
+        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        try {
+            await using var conn = new SqliteConnection(connectionString);
+            await conn.OpenAsync();
+            const string query = @"
+UPDATE boot_shutdown SET last_seen = @now WHERE id = @bootShutdownId;
+UPDATE active_window SET last_seen = @now WHERE id = @currentWindowRecordId;";
+            await using var cmd = new SqliteCommand(query, conn);
+            cmd.Parameters.AddWithValue("@now", now);
+            cmd.Parameters.AddWithValue("@bootShutdownId", (object?)_bootShutdownId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@currentWindowRecordId", (object?)_currentWindowRecordId ?? DBNull.Value);
+            await cmd.ExecuteNonQueryAsync();
+        } catch (Exception ex) {
+            // 失敗しても次の HeartbeatInterval でまた書くので、監視は止めない
+            Debug.WriteLine($"UpdateLastSeenAsync error: {ex.Message}");
         }
     }
 
@@ -371,7 +441,7 @@ WHERE id = @id";
         _windowLock.Wait();
         try {
             _isSuspended = true;
-            
+
             _bootShutdownId ??= GetLatestBootRecordIdSync();
             if (!_bootShutdownId.HasValue) return;
 

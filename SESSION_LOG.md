@@ -261,3 +261,29 @@ FlowRecord の開発セッションごとの変更・修正の記録。
   - The method now holds `_windowLock` and sets `_isSuspended = true`, so the monitoring loop cannot open a new row during shutdown. It also clears `currentWindow` and `_currentWindowRecordId`, like `SuspendMonitoring`.
 - **Known limitation**: If the user cancels the shutdown, monitoring stays paused until the next wake from sleep or app restart. `boot_shutdown` also stays closed.
 - **Verified**: The Release build compiles to the scratchpad. An actual OS shutdown was not tested.
+
+### 2026-10-22: Recover Sessions Cut Off by a Crash or Power Loss (`last_seen` Heartbeat)
+- **Problem**: End times (`boot_shutdown.shutdown_time`, `active_window.end_time`) are only written by the tray Exit and by `SessionEnding`.
+  - A power loss, a held power button, a blue screen, a Task Manager kill, a crash, or stopping the debugger leaves them `NULL`.
+  - The queries treat such orphan rows as ending at their start time, so the whole session, and the window in use at the time, counted as 0 hours.
+- **Schema (`InitializeDatabase`)**: Added `last_seen TEXT NULL` to `boot_shutdown` and `active_window`, both in `CREATE TABLE` and for existing DBs.
+  - New helper `AddColumnIfMissing(conn, table, column, definition)` checks `pragma_table_info(@table)` and runs `ALTER TABLE ... ADD COLUMN` only if the column is missing.
+  - The earlier inline `icon` check now uses this helper too.
+  - Table and column names are interpolated, because SQL parameters can only hold values. Only fixed strings from code are passed.
+- **Heartbeat (`MonitoringLoop`)**: Inside `if (!_isSuspended)` and under `_windowLock`, the loop calls the new `UpdateLastSeenAsync(now)` once every `HeartbeatInterval` (1 minute), tracked with `_lastHeartbeat`.
+  - `UpdateLastSeenAsync` updates `last_seen` on the current `boot_shutdown` and `active_window` rows in one batched command.
+  - A null id passes `DBNull` and matches nothing. Errors are logged and the loop keeps running.
+  - `_lastHeartbeat` starts at `DateTime.MinValue`, so the first loop after startup or after waking writes immediately.
+  - The heartbeat is skipped during sleep, so sleep time is not counted as usage.
+- **Repair on startup (`RepairOrphanRecords`)**: Called at the top of `Start()`, before a new boot row exists.
+  - It runs `UPDATE ... SET shutdown_time = last_seen` and `UPDATE ... SET end_time = last_seen` on rows whose end time is `NULL` and `last_seen` is not.
+  - The aggregation queries are unchanged.
+  - Rows with no `last_seen`, such as those from before this change, are left as they are.
+  - Failures are caught and logged, so startup is not blocked.
+- **Comments**: Added comments explaining the new fields, helper, heartbeat, and repair. Renamed the repair method from its placeholder name `Foo`.
+- **Known limits**:
+  - **Loss per crash**: Up to one `HeartbeatInterval` of time is lost per crash.
+  - **Windows opened just before a crash**: A window row created after the last heartbeat has no `last_seen`, so it stays an orphan. That loses at most about a minute. New rows don't get `last_seen` at insert time, but adding it would only mark the row closed (0 hours), not recover any time.
+  - **Crash during sleep**: `sleep_wake` is not repaired. Repair needs an estimated wake time (the first `active_window` start after `sleep_time`, capped at the session end), which is not implemented.
+  - **Second instance**: There is still no single-instance guard. A second instance would close the running instance's open rows during its own repair. Add a `Mutex` before release.
+- **Verified**: The Release build compiles to the scratchpad with 0 warnings and 0 errors. Neither a real crash nor the repair was tested in the running app.
