@@ -14,6 +14,14 @@ public partial class MonitorService {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LASTINPUTINFO {
+        public uint cbSize;
+        public uint dwTime;
+    }
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetLastInputInfo(ref LASTINPUTINFO plii);
     [LibraryImport("kernel32.dll")] private static partial IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
     // char を UTF-16（Windows の W 版 API の文字形式）として渡すことを明示する。LibraryImport は文字の形式を暗黙に決めない
     [LibraryImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", StringMarshalling = StringMarshalling.Utf16)]
@@ -44,6 +52,10 @@ public partial class MonitorService {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(1);
     // 最後に last_seen を書いた時刻。MinValue にしておくと、起動直後とスリープ復帰直後の最初のループですぐに書く
     private DateTime _lastHeartbeat = DateTime.MinValue;
+    // キーボード・マウスの操作がこの時間ないと離席中とみなす。短すぎると動画を見ているだけの時間まで離席扱いになる
+    private static readonly TimeSpan IdleThreshold = TimeSpan.FromMinutes(5);
+    // 離席中かどうか。離席に入った最初のループだけ記録を閉じ、以降のループで何度も閉じないようにする
+    private bool _isIdle;
 
     private static string AppDataDir =>
         Path.Combine(
@@ -168,6 +180,18 @@ UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_se
         }
     }
 
+    // 最後にキーボード・マウスの操作があってからの経過時間を返す
+    private static TimeSpan GetIdleTime() {
+        // cbSize を設定しないと GetLastInputInfo は失敗する（構造体の版を判別するため）
+        var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+        // 取得できないときは「操作中」として扱い、記録を止めないようにする
+        if (!GetLastInputInfo(ref info)) return TimeSpan.Zero;
+        // dwTime も TickCount も起動からのミリ秒で、約49.7日で 0 に戻る。
+        // uint のまま引き算すると、0 に戻った前後でも桁あふれによって正しい差になる
+        uint idleMs = unchecked((uint)Environment.TickCount - info.dwTime);
+        return TimeSpan.FromMilliseconds(idleMs);
+    }
+
     private async Task MonitoringLoop(CancellationToken token) {
         while (!token.IsCancellationRequested) {
             try {
@@ -183,20 +207,43 @@ UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_se
                             _lastHeartbeat = now;
                         }
 
-                        string activeWindow = GetActiveWindowTitle(out var processId);
-                        if (activeWindow != currentWindow) {
-                            if (!string.IsNullOrEmpty(currentWindow)) {
-                                await CloseCurrentWindowAsync(DateTime.Now);
-                                currentWindow = "";
-                                _currentWindowRecordId = null;
-                            }
-                            if (!string.IsNullOrEmpty(activeWindow)) {
-                                if (processId != 0 && !_savedAppInfos.Contains(activeWindow)) {
-                                    await SaveAppInfo(activeWindow, processId);
+                        var idle = GetIdleTime();
+                        Debug.WriteLine($"idle: {idle.TotalSeconds:F1}s, now: {now}, windowStartTime: {windowStartTime}");
+                        // 離席中はウィンドウの記録を閉じ、使用時間に数えないようにする
+                        if (idle >= IdleThreshold) {
+                            if (!_isIdle) {
+                                _isIdle = true;
+                                // 離席に気づくのは操作が止まってから IdleThreshold 後なので、最後に操作した時刻までさかのぼって閉じる
+                                var idleStart = now - idle;
+                                // 操作がないままウィンドウが切り替わっていると（通知やほかのアプリが前面に出たときなど）、
+                                // 最後の操作は今のウィンドウの開始より前になる。そのまま閉じると終了時刻が開始時刻より前になり、
+                                // 使用時間がマイナスになるので、開始時刻（0分）でそろえる
+                                if (idleStart < windowStartTime) idleStart = windowStartTime;
+                                Debug.WriteLine($"Idle detected. | idleStart: {idleStart}, _currentWindowRecordId: {_currentWindowRecordId}");
+                                if (!string.IsNullOrEmpty(currentWindow)) {
+                                    // 先に currentWindow を空にすると、最初の INSERT に失敗していたときの予備の保存ができなくなるので、閉じてから空にする
+                                    await CloseCurrentWindowAsync(idleStart);
+                                    currentWindow = "";
                                 }
-                                currentWindow = activeWindow;
-                                windowStartTime = DateTime.Now;
-                                _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
+                            }
+                        } else {
+                            // 操作が再開したら currentWindow は空なので、下の処理で表示中ウィンドウの記録を新しく始める
+                            _isIdle = false;
+                            string activeWindow = GetActiveWindowTitle(out var processId);
+                            if (activeWindow != currentWindow) {
+                                if (!string.IsNullOrEmpty(currentWindow)) {
+                                    await CloseCurrentWindowAsync(DateTime.Now);
+                                    currentWindow = "";
+                                    _currentWindowRecordId = null;
+                                }
+                                if (!string.IsNullOrEmpty(activeWindow)) {
+                                    if (processId != 0 && !_savedAppInfos.Contains(activeWindow)) {
+                                        await SaveAppInfo(activeWindow, processId);
+                                    }
+                                    currentWindow = activeWindow;
+                                    windowStartTime = DateTime.Now;
+                                    _currentWindowRecordId = await CreateActiveWindowStartAsync(currentWindow, windowStartTime);
+                                }
                             }
                         }
                     }
