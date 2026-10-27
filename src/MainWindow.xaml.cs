@@ -72,6 +72,7 @@ public partial class MainWindow : Window {
         new WindowInteropHelper(this).EnsureHandle();
 
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        SystemEvents.SessionSwitch += OnSessionSwitch;
     }
 
     protected override void OnSourceInitialized(EventArgs e) {
@@ -149,6 +150,7 @@ public partial class MainWindow : Window {
 
     protected override void OnClosed(EventArgs e) {
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
         if (_notificationHandle != IntPtr.Zero) {
             UnregisterSuspendResumeNotification(_notificationHandle);
             _notificationHandle = IntPtr.Zero;
@@ -247,6 +249,21 @@ public partial class MainWindow : Window {
         if (e.Category == UserPreferenceCategory.General) {
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero) ApplyTitleBarTheme(hwnd);
+        }
+    }
+
+    // ロック中は表示中ウィンドウの記録を閉じて監視を止める。
+    // アイドル検出だけだと、ロックしてから IdleThreshold（5分）の間が使用時間に数えられてしまう
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
+        switch (e.Reason) {
+            case SessionSwitchReason.SessionLock:
+                Debug.WriteLine("Locked");
+                _monitorService.LockMonitoring(DateTime.Now);
+                break;
+            case SessionSwitchReason.SessionUnlock:
+                Debug.WriteLine("Unlocked");
+                _monitorService.UnlockMonitoring();
+                break;
         }
     }
 

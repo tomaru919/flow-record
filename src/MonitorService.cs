@@ -56,6 +56,9 @@ public partial class MonitorService {
     private static readonly TimeSpan IdleThreshold = TimeSpan.FromMinutes(5);
     // 離席中かどうか。離席に入った最初のループだけ記録を閉じ、以降のループで何度も閉じないようにする
     private bool _isIdle;
+    // 画面ロック中かどうか。_isSuspended と分けるのは、ロック中にスリープして復帰すると
+    // ResumeMonitoring が _isSuspended を戻してしまい、ロック画面が使用時間として記録されるため
+    private volatile bool _isLocked;
 
     private static string AppDataDir =>
         Path.Combine(
@@ -197,8 +200,9 @@ UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_se
             try {
                 await _windowLock.WaitAsync(token);
                 try {
-                    // スリープ中は記録しない（Modern Standbyではプロセスが完全には凍結されないことがある）
-                    if (!_isSuspended) {
+                    // スリープ中は記録しない（Modern Standbyではプロセスが完全には凍結されないことがある）。
+                    // 画面ロック中もパソコンを使っていないので記録しない
+                    if (!_isSuspended && !_isLocked) {
                         // ループは 1 秒ごとに回るが、DB への書き込みを減らすため last_seen は HeartbeatInterval ごとに書く。
                         // スリープ中は書かない（書くとスリープしていた時間まで使用時間に数えられてしまう）
                         var now = DateTime.Now;
@@ -208,7 +212,6 @@ UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_se
                         }
 
                         var idle = GetIdleTime();
-                        Debug.WriteLine($"idle: {idle.TotalSeconds:F1}s, now: {now}, windowStartTime: {windowStartTime}");
                         // 離席中はウィンドウの記録を閉じ、使用時間に数えないようにする
                         if (idle >= IdleThreshold) {
                             if (!_isIdle) {
@@ -472,6 +475,27 @@ WHERE id = @id";
         } finally {
             _sleepWakeId = null;
         }
+    }
+
+    // 画面ロック時に表示中ウィンドウの記録を閉じ、解除まで監視を止める。
+    // SessionSwitch は UI スレッドで呼ばれ、すぐに閉じたいので SuspendMonitoring と同じく同期で書く
+    public void LockMonitoring(DateTime lockTime) {
+        _windowLock.Wait();
+        try {
+            _isLocked = true;
+            if (_currentWindowRecordId.HasValue) {
+                CloseActiveWindowSync(_currentWindowRecordId.Value, lockTime);
+            }
+            currentWindow = "";
+            _currentWindowRecordId = null;
+        } finally {
+            _windowLock.Release();
+        }
+    }
+
+    // 解除直後から監視を再開し、次のループで表示中ウィンドウの記録を新しく開始する
+    public void UnlockMonitoring() {
+        _isLocked = false;
     }
 
     // Exitボタン用：DBへ shutdown_time を書く
