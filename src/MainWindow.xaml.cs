@@ -257,11 +257,11 @@ public partial class MainWindow : Window {
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e) {
         switch (e.Reason) {
             case SessionSwitchReason.SessionLock:
-                Debug.WriteLine("Locked");
+                PowerLogger.Log("SessionLock");
                 _monitorService.LockMonitoring(DateTime.Now);
                 break;
             case SessionSwitchReason.SessionUnlock:
-                Debug.WriteLine("Unlocked");
+                PowerLogger.Log("SessionUnlock");
                 _monitorService.UnlockMonitoring();
                 break;
         }

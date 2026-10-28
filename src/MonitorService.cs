@@ -309,6 +309,7 @@ UPDATE active_window SET last_seen = @now WHERE id = @currentWindowRecordId;";
             uint size = (uint)buffer.Length;
             if (!QueryFullProcessImageName(hProcess, 0, buffer, ref size)) return null;
             var path = new string(buffer, 0, (int)size);
+            Debug.WriteLine($"path={path}");
 
             var description = FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim();
             return new AppInfo(
