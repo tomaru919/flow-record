@@ -316,3 +316,26 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 
 ### 2026-10-22: Remove the Unused System.Management Package
 - **Change (`FlowRecord.csproj`)**: Removed `<PackageReference Include="System.Management" Version="10.0.1" />`. No C# code uses WMI (`System.Management`), and it had been unused since the first commit. Removing it keeps `System.Management.dll` and `System.CodeDom.dll` out of the self-contained single-file exe.
+
+### 2026-10-26: Stop Counting Time While Away (Idle Detection)
+- **Problem**: If the user walked away with the screen on, the foreground app's time kept growing.
+- **Change (`MonitorService.cs`)**: Added `GetIdleTime()`. It calls Win32 `GetLastInputInfo` and returns the time since the last keyboard or mouse input.
+  - **Wraparound**: `GetLastInputInfo` and `Environment.TickCount` both count milliseconds since boot and wrap after about 49.7 days. The difference is computed as `uint` inside `unchecked`, so it stays correct across the wrap.
+  - **API failure**: If the call fails, it returns `TimeSpan.Zero`, which counts as "in use", so recording never stops by mistake.
+- **Change (`MonitoringLoop`)**:
+  - **Going idle**: When `idle >= IdleThreshold` (5 minutes), the first such loop closes the current `active_window` row at the last input time (`now - idle`). That time is clamped to `windowStartTime`, so the duration is never negative when a window took focus without input, such as a notification. `_isIdle` keeps the row from being closed again on later loops.
+  - **Coming back**: When input resumes, `_isIdle` is reset. Since `currentWindow` is empty, the normal switch logic starts a new row for the foreground window.
+  - **Heartbeat**: The `last_seen` heartbeat keeps running while idle, so `boot_shutdown` still records the session as alive.
+- **Trade-off**: Watching a video or listening to a meeting for more than 5 minutes without input also counts as away.
+
+### 2026-10-28: Stop Recording While the Screen Is Locked
+- **Problem**: With idle detection alone, the first 5 minutes after Win+L still counted as usage.
+- **Change (`MainWindow.xaml.cs`)**: Subscribes to `SystemEvents.SessionSwitch` in the constructor and unsubscribes in `OnClosed`, since `SystemEvents` is static and would otherwise keep the window alive. `SessionLock` calls `LockMonitoring(DateTime.Now)`, and `SessionUnlock` calls `UnlockMonitoring()`. Both events are logged with `PowerLogger` so they show in Release builds.
+- **Change (`MonitorService.cs`)**:
+  - **`LockMonitoring`**: Takes `_windowLock`, sets `_isLocked`, closes the current row synchronously at the lock time (like `SuspendMonitoring`), and clears `currentWindow` and `_currentWindowRecordId`.
+  - **`UnlockMonitoring`**: Clears `_isLocked`. The next loop starts a new row.
+  - **Loop**: The monitoring loop now runs only when `!_isSuspended && !_isLocked`.
+  - **Why a separate flag**: If `_isSuspended` were reused, then locking, sleeping, and waking would let `ResumeMonitoring` clear the flag and record the lock screen as usage.
+  - **Heartbeat**: `last_seen` is not written while locked, so a crash during a lock ends the boot session at the lock time.
+- **Leftover**: `0890faa` added a debugging line, `Debug.WriteLine($"path={path}")`, in `GetAppInfo`.
+- **Verified**: Not recorded in this log. Lock and unlock leave `SessionLock` / `SessionUnlock` lines in `%LocalAppData%\FlowRecord\power.log` (`power.debug.log` in DEBUG), which can be used to check.
