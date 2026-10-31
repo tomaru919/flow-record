@@ -164,7 +164,9 @@ CREATE TABLE IF NOT EXISTS app_name (
 
     // 強制終了・停電で終了時刻が NULL のまま残った行を、最後に動いていた時刻（last_seen）で閉じる。
     // 閉じないと集計で孤立行として開始時刻にフォールバックし、そのセッションやウィンドウが 0 時間になってしまう。
-    // last_seen が NULL の行（last_seen 列を追加する前の行など）は終わった時刻が分からないので、そのまま残す
+    // last_seen が NULL の行（last_seen 列を追加する前の行など）は終わった時刻が分からないので、そのまま残す。
+    // sleep_wake には last_seen がない（スリープ中は何も書けない）ので、復帰時刻はウィンドウの記録から推定して埋める。
+    // 埋めないと復帰直後にシャットダウンした場合などにスリープが 0 時間になり、寝ていた時間が使用時間に数えられてしまう
     private void RepairOrphanRecords() {
         if (string.IsNullOrWhiteSpace(connectionString)) return;
         try {
@@ -173,7 +175,45 @@ CREATE TABLE IF NOT EXISTS app_name (
 
             const string query = @"
 UPDATE boot_shutdown SET shutdown_time = last_seen WHERE shutdown_time IS NULL AND last_seen IS NOT NULL;
-UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_seen IS NOT NULL;";
+UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_seen IS NOT NULL;
+
+-- 終了時刻が NULL のスリープ行は、復帰時刻を書く前に終わった孤立行。
+-- 同じ起動セッションの中で、スリープ後に最初に始まったウィンドウの開始時刻を復帰時刻とみなす。
+-- ウィンドウがなければ、セッションがスリープ後まで続いていたらその終了時刻（ロック画面のままシャットダウンなど）、
+-- 続いていなければスリープ時刻（スリープ中の電源断）にする。
+-- セッションの終了時刻を使うので、上の boot_shutdown の修復より後に実行する
+UPDATE sleep_wake
+SET wake_time = COALESCE(
+        -- 復帰すると監視ループがすぐにウィンドウの記録を始めるので、最初のウィンドウの開始時刻が復帰時刻に近い。
+        -- 次の起動のウィンドウを拾わないよう、session_end までに始まったものに限る
+        (
+            SELECT aw.start_time
+            FROM active_window aw
+            WHERE julianday(aw.start_time) >= julianday(sleep_wake.sleep_time)
+                AND julianday(aw.start_time) <= julianday(s.session_end)
+            ORDER BY julianday(aw.start_time)
+            LIMIT 1
+        ), CASE
+            WHEN julianday(s.session_end) > julianday(sleep_wake.sleep_time) THEN s.session_end
+            ELSE sleep_wake.sleep_time
+        END
+    )
+-- 直す行（wake_time が NULL）ごとに、そのスリープを含む起動セッション（スリープ直前に起動したもの）の終了時刻を求める。
+-- SET の 2 か所で使うので、ここで 1 回だけ計算して s.session_end として使い回す
+FROM (
+        SELECT sw.id,
+            (
+                SELECT bs.shutdown_time
+                FROM boot_shutdown bs
+                WHERE julianday(bs.boot_time) <= julianday(sw.sleep_time)
+                ORDER BY julianday(bs.boot_time) DESC
+                LIMIT 1
+            ) AS session_end
+        FROM sleep_wake sw
+        WHERE sw.wake_time IS NULL
+            AND sw.sleep_time IS NOT NULL
+    ) AS s
+WHERE sleep_wake.id = s.id;";
 
             using var cmd = new SqliteCommand(query, conn);
             cmd.ExecuteNonQuery();
@@ -700,23 +740,20 @@ WHERE id = @id AND end_time IS NULL";
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
-SELECT
-    'active_window' AS event_type,
+SELECT 'active_window' AS event_type,
     COALESCE(n.display_name, aw.window_title) AS window_title,
     aw.start_time,
     aw.end_time
 FROM active_window aw
-LEFT JOIN app_name n ON n.process_name = aw.window_title
+    LEFT JOIN app_name n ON n.process_name = aw.window_title
 UNION ALL
-SELECT
-    'startup' AS event_type,
+SELECT 'startup' AS event_type,
     'system' AS window_title,
     bs.boot_time AS start_time,
     NULL AS end_time
 FROM boot_shutdown bs
 UNION ALL
-SELECT
-    'shutdown' AS event_type,
+SELECT 'shutdown' AS event_type,
     'system' AS window_title,
     bs.shutdown_time AS start_time,
     NULL AS end_time
@@ -758,28 +795,75 @@ LIMIT 100";
             // total_hours（boot_time〜shutdown_time）にはスリープしていた時間も含まれてしまうため、
             // sleep_hours を別途集計し、フロント側で total_hours - sleep_hours を「実際に使用していた時間」として表示する
             var query = $@"
-WITH ds(date) AS (VALUES {dateParamNames})
-SELECT
-    ds.date AS date,
-    COALESCE((
-        SELECT SUM(
-            (MIN(julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)), julianday(datetime(ds.date, '+1 day')))
-            - MAX(julianday(bs.boot_time), julianday(ds.date))) * 24.0
-        )
-        FROM boot_shutdown bs
-        WHERE julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
-            AND julianday(COALESCE(bs.shutdown_time, CASE WHEN bs.id = @currentBootId THEN @now ELSE bs.boot_time END)) >= julianday(ds.date)
-    ), 0) AS total_hours,
-    COALESCE((
-        SELECT SUM(
-            (MIN(julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)), julianday(datetime(ds.date, '+1 day')))
-            - MAX(julianday(sw.sleep_time), julianday(ds.date))) * 24.0
-        )
-        FROM sleep_wake sw
-        WHERE sw.sleep_time IS NOT NULL
-            AND julianday(sw.sleep_time) < julianday(datetime(ds.date, '+1 day'))
-            AND julianday(COALESCE(sw.wake_time, CASE WHEN sw.id = @currentSleepId THEN @now ELSE sw.sleep_time END)) >= julianday(ds.date)
-    ), 0) AS sleep_hours
+WITH ds(date) AS (
+    VALUES {dateParamNames}
+)
+SELECT ds.date AS date,
+    COALESCE(
+        (
+            SELECT SUM(
+                    (
+                        MIN(
+                            julianday(
+                                COALESCE(
+                                    bs.shutdown_time,
+                                    CASE
+                                        WHEN bs.id = @currentBootId THEN @now
+                                        ELSE bs.boot_time
+                                    END
+                                )
+                            ),
+                            julianday(datetime(ds.date, '+1 day'))
+                        ) - MAX(julianday(bs.boot_time), julianday(ds.date))
+                    ) * 24.0
+                )
+            FROM boot_shutdown bs
+            WHERE julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
+                AND julianday(
+                    COALESCE(
+                        bs.shutdown_time,
+                        CASE
+                            WHEN bs.id = @currentBootId THEN @now
+                            ELSE bs.boot_time
+                        END
+                    )
+                ) >= julianday(ds.date)
+        ),
+        0
+    ) AS total_hours,
+    COALESCE(
+        (
+            SELECT SUM(
+                    (
+                        MIN(
+                            julianday(
+                                COALESCE(
+                                    sw.wake_time,
+                                    CASE
+                                        WHEN sw.id = @currentSleepId THEN @now
+                                        ELSE sw.sleep_time
+                                    END
+                                )
+                            ),
+                            julianday(datetime(ds.date, '+1 day'))
+                        ) - MAX(julianday(sw.sleep_time), julianday(ds.date))
+                    ) * 24.0
+                )
+            FROM sleep_wake sw
+            WHERE sw.sleep_time IS NOT NULL
+                AND julianday(sw.sleep_time) < julianday(datetime(ds.date, '+1 day'))
+                AND julianday(
+                    COALESCE(
+                        sw.wake_time,
+                        CASE
+                            WHEN sw.id = @currentSleepId THEN @now
+                            ELSE sw.sleep_time
+                        END
+                    )
+                ) >= julianday(ds.date)
+        ),
+        0
+    ) AS sleep_hours
 FROM ds
 ORDER BY ds.date ASC";
 
@@ -823,12 +907,26 @@ ORDER BY ds.date ASC";
             // @now まで表示中とみなしてよいのは _currentWindowRecordId の行だけ。他の end_time NULL 行は孤立（強制終了等）のため start_time にフォールバックする。
             // 表示名（app_name）があればそれで集計し、なければ記録したプロセス名のまま表示する
             const string query = @"
-SELECT
-    COALESCE(n.display_name, aw.window_title) AS window_title,
-    SUM((julianday(MIN(COALESCE(aw.end_time, CASE WHEN aw.id = @currentWindowRecordId THEN @now ELSE aw.start_time END), @dayEnd)) - julianday(aw.start_time)) * 24.0) AS duration_hours,
+SELECT COALESCE(n.display_name, aw.window_title) AS window_title,
+    SUM(
+        (
+            julianday(
+                MIN(
+                    COALESCE(
+                        aw.end_time,
+                        CASE
+                            WHEN aw.id = @currentWindowRecordId THEN @now
+                            ELSE aw.start_time
+                        END
+                    ),
+                    @dayEnd
+                )
+            ) - julianday(aw.start_time)
+        ) * 24.0
+    ) AS duration_hours,
     MAX(n.icon) AS icon
 FROM active_window aw
-LEFT JOIN app_name n ON n.process_name = aw.window_title
+    LEFT JOIN app_name n ON n.process_name = aw.window_title
 WHERE aw.start_time >= @dayStart
     AND aw.start_time < @dayEnd
 GROUP BY COALESCE(n.display_name, aw.window_title)

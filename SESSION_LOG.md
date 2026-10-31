@@ -339,3 +339,34 @@ FlowRecord の開発セッションごとの変更・修正の記録。
   - **Heartbeat**: `last_seen` is not written while locked, so a crash during a lock ends the boot session at the lock time.
 - **Leftover**: `0890faa` added a debugging line, `Debug.WriteLine($"path={path}")`, in `GetAppInfo`.
 - **Verified**: Not recorded in this log. Lock and unlock leave `SessionLock` / `SessionUnlock` lines in `%LocalAppData%\FlowRecord\power.log` (`power.debug.log` in DEBUG), which can be used to check.
+
+### 2026-10-29: Repair Orphaned sleep_wake Rows at Startup
+- **Problem**: A `sleep_wake` row keeps `wake_time = NULL` when the wake is never written. This happens on a power loss during sleep, a shutdown or Exit within the 5-second wake confirmation, or a failed `RecordWakeAsync` (its `finally` clears `_sleepWakeId`, so it is never retried).
+  - The weekly chart treats such a row as 0 hours of sleep, but usage is `total_hours - sleep_hours`.
+  - **Power loss during sleep**: Harmless. `last_seen` is not written while asleep, so the boot session is repaired to end just before the sleep.
+  - **Woke but no `wake_time`**: Wrong. For example, sleeping at 23:00, waking at 7:00, and shutting down at 7:00:03 counted the whole night (8 hours) as usage.
+- **Change (`MonitorService.RepairOrphanRecords`)**: Added an `UPDATE sleep_wake ... FROM (...) AS s` after the existing `boot_shutdown` / `active_window` repairs, in the same `ExecuteNonQuery`.
+  - **Session end**: For each row with `wake_time IS NULL`, the subquery `s` finds the boot session that contains the sleep (the latest `boot_time <= sleep_time`) and takes its `shutdown_time` as `session_end`. It is computed once and used twice in `SET`.
+  - **Wake time**: The start of the first `active_window` row between `sleep_time` and `session_end`. The monitoring loop starts a row right after waking, so this is close to the real wake time.
+  - **No window**: If the session lasted past the sleep (for example, shut down from the lock screen), `session_end` is used. Otherwise (power loss during sleep, or `session_end` is NULL), `sleep_time` is used, which means 0 hours.
+  - **Order**: It must run after the `boot_shutdown` repair, because it reads the repaired `shutdown_time`.
+  - **Rerun-safe**: Every statement only touches rows whose end time is NULL, so a failed repair is simply retried on the next launch.
+  - Comments explaining the above were added to the method and inside the SQL.
+- **Formatting**: Reformatted the SQL in `GetRecordsJsonAsync`, `GetDailyBootDurationJsonAsync`, and `GetActiveWindowDurationJsonAsync`. Compared with whitespace and comments removed, all of them are identical to before.
+- **Limits**:
+  - The repair runs only at startup, so after a failed `RecordWakeAsync` the chart overcounts until the next launch.
+  - If the lock screen appears after waking, no window is recorded until unlock, so the unlock time becomes the wake time.
+- **Verified**:
+  - `dotnet build` passes with 0 warnings and 0 errors.
+  - The app bundles SQLite 3.53.4 (via `SQLitePCLRaw.bundle_e_sqlite3` 3.0.5), which supports `UPDATE ... FROM` (3.33+).
+  - The `RepairOrphanRecords` query string, copied from the source, was run against an in-memory DB with `node:sqlite`:
+    - Power loss during sleep gave `wake_time = sleep_time`.
+    - Shutting down 3 seconds after waking gave the first window's start time (7:00:01).
+    - A normal row was unchanged.
+  - On 2026-10-30, the DEBUG build was started with F5 against `flowrecord.debug.db` containing hand-inserted orphan rows dated January 2026:
+    - Power loss during sleep: `wake_time` became the sleep time (1/1 23:00:00), and the `boot_shutdown` row closed at its `last_seen` (22:59:30). The next day's window was not picked up.
+    - Shutting down 3 seconds after waking: `wake_time` became the first window's start time (1/4 7:00:01).
+    - Shutting down from the lock screen (no window): `wake_time` became the session end (1/6 7:05:00).
+    - The real `sleep_wake` rows (ids 1 to 5) were unchanged.
+    - The DB was then restored from a backup, which also removed that F5 session's `boot_shutdown` row.
+  - Not checked: the chart on screen (per-day usage was only computed with an equivalent SQL query in `node:sqlite`), and an orphan row produced by a real sleep and wake.
