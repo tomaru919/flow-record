@@ -370,3 +370,13 @@ FlowRecord の開発セッションごとの変更・修正の記録。
     - The real `sleep_wake` rows (ids 1 to 5) were unchanged.
     - The DB was then restored from a backup, which also removed that F5 session's `boot_shutdown` row.
   - Not checked: the chart on screen (per-day usage was only computed with an equivalent SQL query in `node:sqlite`), and an orphan row produced by a real sleep and wake.
+
+### 2026-11-01: Hourly Usage in the Activity Chart
+- **Change**: Clicking a day's bar in `DailyActivityChart` now shows that day's usage for each hour from 0:00 to 23:00. The "週に戻る" button returns to the weekly chart.
+- **Backend**: Added `MonitorService.GetHourlyUsageJsonAsync(date)` and the `getHourlyUsage:yyyy-MM-dd` message in `MainWindow`. Usage is `total_hours - sleep_hours`, the same definition as the weekly chart, with each row clipped to the hour.
+- **Frontend**: `App` holds `selectedDate` and `hourlyUsage`, and also requests the hourly data on refresh. The response includes `date`, so a late response for a previously selected day is ignored.
+- **Limits**: A day with 0 usage has no bar, so it cannot be clicked. Hours are not filtered for idle or lock time, as in the weekly chart.
+- **Verified**:
+  - `npm run build`, `npm run lint`, and `dotnet build` pass with 0 warnings and 0 errors.
+  - The query, read from the source, was run with `node:sqlite` against `flowrecord.debug.db`. For 10/27, 10/28, and 10/29, the hourly sum matched the daily usage (for example, 1.0966 hours on 10/28).
+  - Not checked: clicking and displaying the chart in the running app.
