@@ -5,6 +5,7 @@ import ActiveWindowChart from './components/ActiveWindowChart'
 import type {
   ActiveWindowRecord,
   BootDuration,
+  HourlyUsage,
   ActiveWindowDuration,
   WebViewMessageEvent,
 } from './types'
@@ -15,10 +16,20 @@ export default function App() {
   const [activeWindowDurations, setActiveWindowDurations] = useState<ActiveWindowDuration[]>([])
   const [weekOffset, setWeekOffset] = useState(0)
   const [dayOffset, setDayOffset] = useState(0)
+  // 時間別に表示している日（yyyy-MM-dd）。null のときは週のグラフを表示する
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [hourlyUsage, setHourlyUsage] = useState<HourlyUsage[]>([])
   // useEffect 内のメッセージハンドラは最初の描画時の refreshData を持ち続けるので、
   // state を直接読むと常に初期値の 0 になる。最新の値を読めるよう ref にも入れておく
   const weekOffsetRef = useRef(0)
   const dayOffsetRef = useRef(0)
+  const selectedDateRef = useRef<string | null>(null)
+
+  const requestHourlyUsage = (date: string) => {
+    if (window.chrome?.webview) {
+      window.chrome.webview.postMessage(`getHourlyUsage:${date}`)
+    }
+  }
 
   const requestBootDurations = (offset: number) => {
     if (window.chrome?.webview) {
@@ -37,6 +48,7 @@ export default function App() {
       window.chrome.webview.postMessage('getActiveWindowRecords')
       requestBootDurations(weekOffsetRef.current)
       requestActiveWindowDurations(dayOffsetRef.current)
+      if (selectedDateRef.current) requestHourlyUsage(selectedDateRef.current)
     } else {
       console.warn("Not running in WebView2")
     }
@@ -53,6 +65,14 @@ export default function App() {
   const handleNextWeek = () => {
     if (weekOffset >= 0) return
     changeWeek(weekOffset + 1)
+  }
+
+  const changeSelectedDate = (date: string | null) => {
+    selectedDateRef.current = date
+    setSelectedDate(date)
+    // 前に選んだ日のグラフが一瞬表示されないように空にしておく
+    setHourlyUsage([])
+    if (date) requestHourlyUsage(date)
   }
 
   const changeDay = (newOffset: number) => {
@@ -77,6 +97,9 @@ export default function App() {
           setActiveWindowRecords(message.data)
         } else if (message.type === 'bootDurations') {
           setBootDurations(message.data)
+        } else if (message.type === 'hourlyUsage') {
+          // 応答が届く前に別の日へ切り替えていたら、古い応答は捨てる
+          if (message.date === selectedDateRef.current) setHourlyUsage(message.data)
         } else if (message.type === 'activeWindowDurations') {
           setActiveWindowDurations(message.data)
         } else if (message.type === 'refresh') {
@@ -107,6 +130,9 @@ export default function App() {
           weekOffset={weekOffset}
           onPrevWeek={handlePrevWeek}
           onNextWeek={handleNextWeek}
+          selectedDate={selectedDate}
+          hourlyUsage={hourlyUsage}
+          onSelectDate={changeSelectedDate}
         />
         <ActiveWindowChart
           activeWindowDurations={activeWindowDurations}

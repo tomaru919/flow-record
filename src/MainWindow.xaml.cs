@@ -206,6 +206,10 @@ public partial class MainWindow : Window {
             var weekOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;
             var json = await _monitorService.GetDailyBootDurationJsonAsync(weekOffset);
             webView.CoreWebView2.PostWebMessageAsJson(json);
+        } else if (message != null && message.StartsWith("getHourlyUsage:")) {
+            var date = message["getHourlyUsage:".Length..];
+            var json = await _monitorService.GetHourlyUsageJsonAsync(date);
+            webView.CoreWebView2.PostWebMessageAsJson(json);
         } else if (message != null && message.StartsWith("getActiveWindowDurations")) {
             var parts = message.Split(':');
             var dayOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;

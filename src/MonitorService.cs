@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -889,6 +890,119 @@ ORDER BY ds.date ASC";
         } catch (Exception ex) {
             Debug.WriteLine($"GetDailyBootDurationJsonAsync error: {ex.Message}");
             return "{\"type\":\"bootDurations\",\"data\":[]}";
+        }
+    }
+
+    // date（yyyy-MM-dd）の使用時間を 0〜23 時の 1 時間ごとに集計する。
+    // 週のグラフと同じく「起動していた時間 - スリープしていた時間」を使用時間とし、各行を 1 時間の枠に切り詰めて足す。
+    // 応答に date を含めるのは、日を続けて切り替えたときに、前の日の応答を画面側で捨てられるようにするため
+    public async Task<string> GetHourlyUsageJsonAsync(string date) {
+        var emptyJson = JsonSerializer.Serialize(new { type = "hourlyUsage", date, data = Array.Empty<object>() });
+        try {
+            if (string.IsNullOrWhiteSpace(connectionString)) return emptyJson;
+            if (!DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) return emptyJson;
+
+            await using var conn = new SqliteConnection(connectionString);
+            await conn.OpenAsync();
+
+            var hourParamNames = string.Join(", ", Enumerable.Range(0, 24).Select(i => $"({i}, @h{i})"));
+
+            // NULL の終了時刻の扱いは GetDailyBootDurationJsonAsync と同じ。
+            // julianday(hs.hour_start) 以降に終わった行だけを対象にするので、まだ来ていない時間帯は 0 になる
+            var query = $@"
+WITH hs(hour, hour_start) AS (
+    VALUES {hourParamNames}
+)
+SELECT hs.hour AS hour,
+    COALESCE(
+        (
+            SELECT SUM(
+                    (
+                        MIN(
+                            julianday(
+                                COALESCE(
+                                    bs.shutdown_time,
+                                    CASE
+                                        WHEN bs.id = @currentBootId THEN @now
+                                        ELSE bs.boot_time
+                                    END
+                                )
+                            ),
+                            julianday(datetime(hs.hour_start, '+1 hour'))
+                        ) - MAX(julianday(bs.boot_time), julianday(hs.hour_start))
+                    ) * 24.0
+                )
+            FROM boot_shutdown bs
+            WHERE julianday(bs.boot_time) < julianday(datetime(hs.hour_start, '+1 hour'))
+                AND julianday(
+                    COALESCE(
+                        bs.shutdown_time,
+                        CASE
+                            WHEN bs.id = @currentBootId THEN @now
+                            ELSE bs.boot_time
+                        END
+                    )
+                ) >= julianday(hs.hour_start)
+        ),
+        0
+    ) AS total_hours,
+    COALESCE(
+        (
+            SELECT SUM(
+                    (
+                        MIN(
+                            julianday(
+                                COALESCE(
+                                    sw.wake_time,
+                                    CASE
+                                        WHEN sw.id = @currentSleepId THEN @now
+                                        ELSE sw.sleep_time
+                                    END
+                                )
+                            ),
+                            julianday(datetime(hs.hour_start, '+1 hour'))
+                        ) - MAX(julianday(sw.sleep_time), julianday(hs.hour_start))
+                    ) * 24.0
+                )
+            FROM sleep_wake sw
+            WHERE sw.sleep_time IS NOT NULL
+                AND julianday(sw.sleep_time) < julianday(datetime(hs.hour_start, '+1 hour'))
+                AND julianday(
+                    COALESCE(
+                        sw.wake_time,
+                        CASE
+                            WHEN sw.id = @currentSleepId THEN @now
+                            ELSE sw.sleep_time
+                        END
+                    )
+                ) >= julianday(hs.hour_start)
+        ),
+        0
+    ) AS sleep_hours
+FROM hs
+ORDER BY hs.hour ASC";
+
+            await using var cmd = new SqliteCommand(query, conn);
+            cmd.Parameters.AddWithValue("@now", DateTime.Now);
+            cmd.Parameters.AddWithValue("@currentBootId", (object?)_bootShutdownId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@currentSleepId", (object?)_sleepWakeId ?? DBNull.Value);
+            for (int i = 0; i < 24; i++) {
+                cmd.Parameters.AddWithValue($"@h{i}", day.AddHours(i).ToString("yyyy-MM-dd HH:mm:ss"));
+            }
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            var results = new List<object>();
+            while (await reader.ReadAsync()) {
+                var usageHours = Convert.ToDouble(reader["total_hours"]) - Convert.ToDouble(reader["sleep_hours"]);
+                results.Add(new {
+                    hour = Convert.ToInt32(reader["hour"]),
+                    usage_hours = Math.Round(Math.Max(0, usageHours), 4)
+                });
+            }
+            return JsonSerializer.Serialize(new { type = "hourlyUsage", date, data = results });
+        } catch (Exception ex) {
+            Debug.WriteLine($"GetHourlyUsageJsonAsync error: {ex.Message}");
+            return emptyJson;
         }
     }
 
