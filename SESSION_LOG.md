@@ -380,3 +380,7 @@ FlowRecord の開発セッションごとの変更・修正の記録。
   - `npm run build`, `npm run lint`, and `dotnet build` pass with 0 warnings and 0 errors.
   - The query, read from the source, was run with `node:sqlite` against `flowrecord.debug.db`. For 10/27, 10/28, and 10/29, the hourly sum matched the daily usage (for example, 1.0966 hours on 10/28).
   - Not checked: clicking and displaying the chart in the running app.
+
+### 2026-11-02: Show Every Hour on the Hourly Chart's X Axis
+- **Problem**: The hourly view of `DailyActivityChart` showed only odd hours (1時, 3時, … 23時). Recharts hides ticks that would overlap, and 24 labels with `時` did not fit.
+- **Change (`DailyActivityChart.tsx`)**: Set `interval={0}` on `XAxis` so no tick is skipped. In the hourly view, `tickFormatter` removes `時` from the tick text, so the labels fit. The Tooltip still shows `13時`, since the row's `label` is unchanged.

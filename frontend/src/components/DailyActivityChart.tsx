@@ -113,7 +113,16 @@ export default function DailyActivityChart({
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
             <CartesianGrid vertical={false} stroke="rgba(200, 200, 200, 0.1)" />
-            <XAxis dataKey="label" tick={{ fill: '#888', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#444' }} />
+            <XAxis
+              dataKey="label"
+              // 既定では文字が重なりそうな目盛りを間引くので、全部表示する。
+              // 時間別は 24 個並んで「時」まで入らないので、目盛りは数字だけにする（Tooltip は label のまま「13時」と出る）
+              interval={0}
+              tickFormatter={selectedDate ? (label: string) => label.replace('時', '') : undefined}
+              tick={{ fill: '#888', fontSize: 12 }}
+              tickLine={false}
+              axisLine={{ stroke: '#444' }}
+            />
             <YAxis
               ticks={ticks}
               domain={[0, ticks[ticks.length - 1]]}
