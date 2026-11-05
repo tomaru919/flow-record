@@ -18,6 +18,7 @@ public class Database {
 #endif
     public string ConnectionString { get; } = $"Data Source={DbPath}";
 
+    // 孤立行の修復もするので、新しい起動記録やウィンドウの行を作る前に呼ぶ（この時点で終了時刻が NULL の行は、すべて前回までの孤立行）
     public void Initialize() {
         Directory.CreateDirectory(AppDataDir);
         InitializeDatabase();
@@ -84,8 +85,12 @@ CREATE TABLE IF NOT EXISTS app_name (
         alter.ExecuteNonQuery();
     }
 
+    // 強制終了・停電で終了時刻が NULL のまま残った行を、最後に動いていた時刻（last_seen）で閉じる。
+    // 閉じないと集計で孤立行として開始時刻にフォールバックし、そのセッションやウィンドウが 0 時間になってしまう。
+    // last_seen が NULL の行（last_seen 列を追加する前の行など）は終わった時刻が分からないので、そのまま残す。
+    // sleep_wake には last_seen がない（スリープ中は何も書けない）ので、復帰時刻はウィンドウの記録から推定して埋める。
+    // 埋めないと復帰直後にシャットダウンした場合などにスリープが 0 時間になり、寝ていた時間が使用時間に数えられてしまう
     private void RepairOrphanRecords() {
-        if (string.IsNullOrWhiteSpace(ConnectionString)) return;
         try {
             using var conn = new SqliteConnection(ConnectionString);
             conn.Open();

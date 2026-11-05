@@ -37,7 +37,7 @@ public partial class MonitorService {
 
     private string currentWindow = "";
     private DateTime windowStartTime = DateTime.Now;
-    private string? connectionString;
+    private readonly string connectionString;
     private CancellationTokenSource? _cts;
     private long? _bootShutdownId;
     private long? _currentWindowRecordId;
@@ -61,95 +61,15 @@ public partial class MonitorService {
     // ResumeMonitoring が _isSuspended を戻してしまい、ロック画面が使用時間として記録されるため
     private volatile bool _isLocked;
 
-    private static string AppDataDir =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FlowRecord"
-        );
-
-#if DEBUG
-    private static string DbPath => Path.Combine(AppDataDir, "flowrecord.debug.db");
-#else
-    private static string DbPath => Path.Combine(AppDataDir, "flowrecord.db");
-#endif
-
     public MonitorService() {
-        Initialize();
+        // スキーマの作成と孤立行の修復をしてから、記録を始める
+        var database = new Database();
+        database.Initialize();
+        connectionString = database.ConnectionString;
         Start();
     }
 
-    private void Initialize() {
-        Directory.CreateDirectory(AppDataDir);
-
-        connectionString = $"Data Source={DbPath}";
-
-        InitializeDatabase();
-    }
-
-    private void InitializeDatabase() {
-        using var conn = new SqliteConnection(connectionString);
-        conn.Open();
-
-        const string schema = @"
-CREATE TABLE IF NOT EXISTS active_window (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    window_title TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NULL,
-    created_at TEXT NOT NULL,
-    last_seen TEXT NULL
-);
-
-CREATE TABLE IF NOT EXISTS boot_shutdown (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    boot_time TEXT NOT NULL,
-    shutdown_time TEXT NULL,
-    created_at TEXT NOT NULL,
-    last_seen TEXT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sleep_wake (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sleep_time TEXT NULL,
-    wake_time TEXT NULL,
-    created_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_active_window_start_time ON active_window (start_time DESC);
-CREATE INDEX IF NOT EXISTS idx_boot_shutdown_boot_time ON boot_shutdown (boot_time DESC);
-
--- active_window.window_title にはプロセス名（例: Code）を記録し、表示用の名前（例: Visual Studio Code）はここで対応付ける
-CREATE TABLE IF NOT EXISTS app_name (
-    process_name TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    icon BLOB NULL
-);";
-
-        using var cmd = new SqliteCommand(schema, conn);
-        cmd.ExecuteNonQuery();
-
-        // CREATE TABLE IF NOT EXISTS はテーブルが既にあると何もしないので、後から増やした列は既存の DB にここで追加する
-        AddColumnIfMissing(conn, "app_name", "icon", "BLOB");
-        AddColumnIfMissing(conn, "boot_shutdown", "last_seen", "TEXT");
-        AddColumnIfMissing(conn, "active_window", "last_seen", "TEXT");
-    }
-
-    // pragma_table_info でテーブルの列一覧を調べ、指定した列が無ければ ALTER TABLE で追加する。
-    // テーブル名・列名はパラメーターにできない（値にしか使えない）ので文字列に埋め込む。コード内の固定文字列だけを渡すこと
-    private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string definition) {
-        using var check = new SqliteCommand("SELECT COUNT(*) FROM pragma_table_info(@table) WHERE name = @column", conn);
-        check.Parameters.AddWithValue("@table", table);
-        check.Parameters.AddWithValue("@column", column);
-        if ((long)check.ExecuteScalar()! == 1) return;
-
-        using var alter = new SqliteCommand($"ALTER TABLE {table} ADD COLUMN {column} {definition}", conn);
-        alter.ExecuteNonQuery();
-    }
-
     private void Start() {
-        // 新しい起動記録やウィンドウの行を作る前に呼ぶ（この時点で終了時刻が NULL の行は、すべて前回までの孤立行）
-        RepairOrphanRecords();
-
         _cts = new CancellationTokenSource();
 
         Task.Run(async () => {
@@ -161,67 +81,6 @@ CREATE TABLE IF NOT EXISTS app_name (
                 Debug.WriteLine($"MonitorService.Start error: {ex}");
             }
         });
-    }
-
-    // 強制終了・停電で終了時刻が NULL のまま残った行を、最後に動いていた時刻（last_seen）で閉じる。
-    // 閉じないと集計で孤立行として開始時刻にフォールバックし、そのセッションやウィンドウが 0 時間になってしまう。
-    // last_seen が NULL の行（last_seen 列を追加する前の行など）は終わった時刻が分からないので、そのまま残す。
-    // sleep_wake には last_seen がない（スリープ中は何も書けない）ので、復帰時刻はウィンドウの記録から推定して埋める。
-    // 埋めないと復帰直後にシャットダウンした場合などにスリープが 0 時間になり、寝ていた時間が使用時間に数えられてしまう
-    private void RepairOrphanRecords() {
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
-        try {
-            using var conn = new SqliteConnection(connectionString);
-            conn.Open();
-
-            const string query = @"
-UPDATE boot_shutdown SET shutdown_time = last_seen WHERE shutdown_time IS NULL AND last_seen IS NOT NULL;
-UPDATE active_window SET end_time = last_seen WHERE end_time IS NULL AND last_seen IS NOT NULL;
-
--- 終了時刻が NULL のスリープ行は、復帰時刻を書く前に終わった孤立行。
--- 同じ起動セッションの中で、スリープ後に最初に始まったウィンドウの開始時刻を復帰時刻とみなす。
--- ウィンドウがなければ、セッションがスリープ後まで続いていたらその終了時刻（ロック画面のままシャットダウンなど）、
--- 続いていなければスリープ時刻（スリープ中の電源断）にする。
--- セッションの終了時刻を使うので、上の boot_shutdown の修復より後に実行する
-UPDATE sleep_wake
-SET wake_time = COALESCE(
-        -- 復帰すると監視ループがすぐにウィンドウの記録を始めるので、最初のウィンドウの開始時刻が復帰時刻に近い。
-        -- 次の起動のウィンドウを拾わないよう、session_end までに始まったものに限る
-        (
-            SELECT aw.start_time
-            FROM active_window aw
-            WHERE julianday(aw.start_time) >= julianday(sleep_wake.sleep_time)
-                AND julianday(aw.start_time) <= julianday(s.session_end)
-            ORDER BY julianday(aw.start_time)
-            LIMIT 1
-        ), CASE
-            WHEN julianday(s.session_end) > julianday(sleep_wake.sleep_time) THEN s.session_end
-            ELSE sleep_wake.sleep_time
-        END
-    )
--- 直す行（wake_time が NULL）ごとに、そのスリープを含む起動セッション（スリープ直前に起動したもの）の終了時刻を求める。
--- SET の 2 か所で使うので、ここで 1 回だけ計算して s.session_end として使い回す
-FROM (
-        SELECT sw.id,
-            (
-                SELECT bs.shutdown_time
-                FROM boot_shutdown bs
-                WHERE julianday(bs.boot_time) <= julianday(sw.sleep_time)
-                ORDER BY julianday(bs.boot_time) DESC
-                LIMIT 1
-            ) AS session_end
-        FROM sleep_wake sw
-        WHERE sw.wake_time IS NULL
-            AND sw.sleep_time IS NOT NULL
-    ) AS s
-WHERE sleep_wake.id = s.id;";
-
-            using var cmd = new SqliteCommand(query, conn);
-            cmd.ExecuteNonQuery();
-        } catch (Exception ex) {
-            // 修復に失敗しても記録は始められるので、起動は止めない
-            Debug.WriteLine($"RepairOrphanRecords error: {ex}");
-        }
     }
 
     // 最後にキーボード・マウスの操作があってからの経過時間を返す
@@ -303,7 +162,6 @@ WHERE sleep_wake.id = s.id;";
     // 次回起動時に RepairOrphanRecords がこの時刻を終了時刻として使う。
     // ID が null（デスクトップ表示中などで記録中の行がない）のときは DBNull を渡すので、どの行にも一致せず何もしない
     private async Task UpdateLastSeenAsync(DateTime now) {
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
         try {
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
@@ -373,7 +231,7 @@ UPDATE active_window SET last_seen = @now WHERE id = @currentWindowRecordId;";
 
     private async Task SaveAppInfo(string processName, uint processId) {
         var appInfo = GetAppInfo(processId);
-        if (appInfo == null || string.IsNullOrWhiteSpace(connectionString)) return;
+        if (appInfo == null) return;
         try {
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
@@ -400,10 +258,6 @@ ON CONFLICT (process_name) DO UPDATE SET
         PowerLogger.Log($"RecordSleep called: {sleepTime}");
         if (_sleepWakeId.HasValue) {
             PowerLogger.Log("RecordSleep skipped: unconfirmed sleep already pending");
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(connectionString)) {
-            PowerLogger.Log("RecordSleep skipped: connectionString is empty");
             return;
         }
         try {
@@ -446,7 +300,6 @@ SELECT last_insert_rowid();";
     }
 
     private void CloseActiveWindowSync(long recordId, DateTime endTime) {
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
         try {
             using var conn = new SqliteConnection(connectionString);
             conn.Open();
@@ -493,8 +346,8 @@ WHERE id = @id AND end_time IS NULL";
 
     private async Task RecordWakeAsync(DateTime wakeTime) {
         PowerLogger.Log($"RecordWakeAsync called: {wakeTime}, pendingId={_sleepWakeId}");
-        if (!_sleepWakeId.HasValue || string.IsNullOrWhiteSpace(connectionString)) {
-            PowerLogger.Log("RecordWakeAsync skipped: no pending sleep row or empty connectionString");
+        if (!_sleepWakeId.HasValue) {
+            PowerLogger.Log("RecordWakeAsync skipped: no pending sleep row");
             return;
         }
         try {
@@ -549,7 +402,6 @@ WHERE id = @id";
     // SessionEnding は強制終了までの猶予が短いため、同期書き込みで完結させる
     public void RecordShutdownSync(DateTime shutdownTime) {
         if (_shutdownRecorded) return;
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
         _windowLock.Wait();
         try {
             _isSuspended = true;
@@ -585,7 +437,6 @@ WHERE id = @currentWindowRecordId AND end_time IS NULL;";
     }
 
     private long? GetLatestBootRecordIdSync() {
-        if (string.IsNullOrWhiteSpace(connectionString)) return null;
         using var conn = new SqliteConnection(connectionString);
         conn.Open();
 
@@ -617,8 +468,6 @@ LIMIT 1";
     }
 
     private async Task<long?> CreateBootRecordAsync(DateTime bootTime) {
-        if (string.IsNullOrWhiteSpace(connectionString)) return null;
-
         await using var conn = new SqliteConnection(connectionString);
         await conn.OpenAsync();
 
@@ -634,7 +483,6 @@ SELECT last_insert_rowid();";
     }
 
     private async Task<long?> GetLatestBootRecordIdAsync() {
-        if (string.IsNullOrWhiteSpace(connectionString)) return null;
         await using var conn = new SqliteConnection(connectionString);
         await conn.OpenAsync();
 
@@ -653,7 +501,6 @@ LIMIT 1";
         await _shutdownLock.WaitAsync();
         try {
             if (_shutdownRecorded) return;
-            if (string.IsNullOrWhiteSpace(connectionString)) return;
 
             _bootShutdownId ??= await GetLatestBootRecordIdAsync();
             if (!_bootShutdownId.HasValue) return;
@@ -680,7 +527,6 @@ WHERE id = @id AND shutdown_time IS NULL";
 
     private async Task SaveActiveWindowRecordAsync(string windowTitle, DateTime startTime, DateTime endTime) {
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return;
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
@@ -698,7 +544,6 @@ VALUES (@window_title, @start_time, @end_time, @created_at)";
 
     private async Task<long?> CreateActiveWindowStartAsync(string windowTitle, DateTime startTime) {
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return null;
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
@@ -719,7 +564,6 @@ SELECT last_insert_rowid();";
 
     private async Task CloseActiveWindowAsync(long recordId, DateTime endTime) {
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return;
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
@@ -737,7 +581,6 @@ WHERE id = @id AND end_time IS NULL";
 
     public async Task<string> GetRecordsJsonAsync() {
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return "[]";
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
             const string query = @"
@@ -779,7 +622,6 @@ LIMIT 100";
 
     public async Task<string> GetDailyBootDurationJsonAsync(int weekOffset = 0) {
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"bootDurations\",\"data\":[]}";
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
 
@@ -899,7 +741,6 @@ ORDER BY ds.date ASC";
     public async Task<string> GetHourlyUsageJsonAsync(string date) {
         var emptyJson = JsonSerializer.Serialize(new { type = "hourlyUsage", date, data = Array.Empty<object>() });
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return emptyJson;
             if (!DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) return emptyJson;
 
             await using var conn = new SqliteConnection(connectionString);
@@ -1009,7 +850,6 @@ ORDER BY hs.hour ASC";
     // dayOffset: 0 が今日、-1 が昨日
     public async Task<string> GetActiveWindowDurationJsonAsync(int dayOffset = 0) {
         try {
-            if (string.IsNullOrWhiteSpace(connectionString)) return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
             await using var conn = new SqliteConnection(connectionString);
             await conn.OpenAsync();
 

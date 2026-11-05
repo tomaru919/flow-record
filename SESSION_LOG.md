@@ -384,3 +384,24 @@ FlowRecord の開発セッションごとの変更・修正の記録。
 ### 2026-11-02: Show Every Hour on the Hourly Chart's X Axis
 - **Problem**: The hourly view of `DailyActivityChart` showed only odd hours (1時, 3時, … 23時). Recharts hides ticks that would overlap, and 24 labels with `時` did not fit.
 - **Change (`DailyActivityChart.tsx`)**: Set `interval={0}` on `XAxis` so no tick is skipped. In the hourly view, `tickFormatter` removes `時` from the tick text, so the labels fit. The Tooltip still shows `13時`, since the row's `label` is unchanged.
+
+### 2026-11-05: Tidy Up the Database Class
+- **Change (`Database.cs`)**:
+  - Removed the `IsNullOrWhiteSpace(ConnectionString)` check in `RepairOrphanRecords`. `ConnectionString` always has a value.
+  - Added a comment on `Initialize`: it must run before new boot or window rows are created, because it repairs orphan rows.
+  - Copied the explanation above `RepairOrphanRecords` from `MonitorService`. It covers why rows are closed at `last_seen`, why rows with a NULL `last_seen` are left alone, and why the `sleep_wake` wake time is estimated.
+- **`MonitorService` now uses `Database`**:
+  - The constructor creates a `Database`, calls `Initialize()` (schema creation and orphan repair), and takes `ConnectionString` from it.
+  - Removed the duplicated `AppDataDir`, `DbPath`, `Initialize`, `InitializeDatabase`, `AddColumnIfMissing`, and `RepairOrphanRecords`.
+  - Removed the `RepairOrphanRecords()` call at the top of `Start`, because `Database.Initialize` now runs it before `Start`.
+  - `connectionString` is now `private readonly string` (it was `string?`).
+- **Removed the `IsNullOrWhiteSpace(connectionString)` checks**: `MonitorService` had 17 of them. The constructor always sets `connectionString` from `Database.ConnectionString`, so they could never trigger.
+  - In `SaveAppInfo`, `if (appInfo == null || ...)` became `if (appInfo == null)`.
+  - In `RecordWakeAsync`, the check became `if (!_sleepWakeId.HasValue)`, and the log text no longer mentions an empty `connectionString`.
+  - The 4-line block in `RecordSleep` that logged "connectionString is empty" was deleted.- **Verified**:
+  - `dotnet build` passes with 0 warnings and 0 errors.
+  - On 2026-11-05, the user ran the DEBUG build with F5 (11:21–11:28). `flowrecord.debug.db` was then read in read-only mode:
+    - All four tables, both indexes, and every column, including `icon` and `last_seen`, are present.
+    - The session was recorded as `boot_shutdown` id 65, with `shutdown_time` and `last_seen` set. 34 `active_window` rows from 11:21:44 to 11:28:21 were all closed.
+    - The only rows with a NULL end time are `boot_shutdown` id 9 and `active_window` id 264, both from September 2026. Their `last_seen` is NULL, so the repair leaves them alone as intended.
+  - Not checked: the repair of a new orphan row. No such row existed before this launch.
