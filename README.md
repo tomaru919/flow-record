@@ -70,7 +70,8 @@
 - [ ] JavaScript runtimeをbunに変える
 - [x] 各時間ごとにアクティビティチャートの使用時間を表示する
 - [ ] 動画を見ている、会議を聞いているなど、5 分以上操作しないときも離席として扱われる問題の解決
-- [ ] デイリーアクティビティチャートのアプリの色が変わることがある
+- [ ] アクティブウィンドウチャートのアプリの色が変わることがある
+- [ ] デイリーアクティビティチャートに実際にユーザーが操作していた時間も表示する
 
 ## 課題
 - "Exit"ボタンを押したらパソコンのシャットダウン時間を記録できなくなる
@@ -92,9 +93,3 @@ dotnet publish -c Release
 git tag v1.0.0
 git push origin v1.0.0
 ```
-
-### claude code (laptop)
-claude --resume 70bb0693-ffd9-4be3-bfe0-ab0b391d530f
-
-### claude code (desktop)
-claude --resume 120d523b-c622-48ec-abae-5674aaec580c

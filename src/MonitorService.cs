@@ -1,9 +1,7 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using FlowRecord.Logging;
 using System.Drawing.Imaging;
@@ -66,8 +64,25 @@ public partial class MonitorService {
         var database = new Database();
         database.Initialize();
         connectionString = database.ConnectionString;
+        _usageQueries = new UsageQueries(connectionString);
         Start();
     }
+
+    // 画面用の集計。UsageQueries は状態を持たないので、今進行中の行の ID と現在時刻をここで渡す
+    private readonly UsageQueries _usageQueries;
+    private CurrentRecordIds CurrentIds => new(_bootShutdownId, _currentWindowRecordId, _sleepWakeId);
+
+    public Task<List<ActivityRecord>> GetRecordsAsync() =>
+        _usageQueries.GetRecordsAsync();
+
+    public Task<List<BootDuration>> GetDailyBootDurationsAsync(int weekOffset) =>
+        _usageQueries.GetDailyBootDurationsAsync(weekOffset, CurrentIds, DateTime.Now);
+
+    public Task<List<HourlyUsage>> GetHourlyUsageAsync(DateTime day) =>
+        _usageQueries.GetHourlyUsageAsync(day, CurrentIds, DateTime.Now);
+
+    public Task<List<ActiveWindowDuration>> GetActiveWindowDurationsAsync(int dayOffset) =>
+        _usageQueries.GetActiveWindowDurationsAsync(dayOffset, CurrentIds, DateTime.Now);
 
     private void Start() {
         _cts = new CancellationTokenSource();
@@ -576,338 +591,6 @@ WHERE id = @id AND end_time IS NULL";
             await cmd.ExecuteNonQueryAsync();
         } catch (Exception ex) {
             Debug.WriteLine($"CloseActiveWindowAsync DB Error: {ex.Message}");
-        }
-    }
-
-    public async Task<string> GetRecordsJsonAsync() {
-        try {
-            await using var conn = new SqliteConnection(connectionString);
-            await conn.OpenAsync();
-            const string query = @"
-SELECT 'active_window' AS event_type,
-    COALESCE(n.display_name, aw.window_title) AS window_title,
-    aw.start_time,
-    aw.end_time
-FROM active_window aw
-    LEFT JOIN app_name n ON n.process_name = aw.window_title
-UNION ALL
-SELECT 'startup' AS event_type,
-    'system' AS window_title,
-    bs.boot_time AS start_time,
-    NULL AS end_time
-FROM boot_shutdown bs
-UNION ALL
-SELECT 'shutdown' AS event_type,
-    'system' AS window_title,
-    bs.shutdown_time AS start_time,
-    NULL AS end_time
-FROM boot_shutdown bs
-WHERE bs.shutdown_time IS NOT NULL
-ORDER BY start_time DESC
-LIMIT 100";
-            await using var cmd = new SqliteCommand(query, conn);
-            await using var reader = await cmd.ExecuteReaderAsync();
-            var results = new List<object>();
-            while (await reader.ReadAsync()) {
-                results.Add(new {
-                    window_title = reader["window_title"].ToString(),
-                    event_type = reader["event_type"].ToString(),
-                    start_time = reader["start_time"].ToString(),
-                    end_time = reader["end_time"] == DBNull.Value ? "" : reader["end_time"].ToString()
-                });
-            }
-            return JsonSerializer.Serialize(new { type = "activeWindowRecords", data = results });
-        } catch { return "{\"type\":\"activeWindowRecords\",\"data\":[]}"; }
-    }
-
-    public async Task<string> GetDailyBootDurationJsonAsync(int weekOffset = 0) {
-        try {
-            await using var conn = new SqliteConnection(connectionString);
-            await conn.OpenAsync();
-
-            // 日曜日始まりの週の開始日を計算し、weekOffset 週分ずらす
-            var today = DateTime.Today;
-            var currentWeekSunday = today.AddDays(-(int)today.DayOfWeek);
-            var weekStart = currentWeekSunday.AddDays(weekOffset * 7);
-            var dates = Enumerable.Range(0, 7).Select(i => weekStart.AddDays(i)).ToArray();
-
-            var dateParamNames = string.Join(", ", Enumerable.Range(0, 7).Select(i => $"(@d{i})"));
-
-            // @now まで稼働中とみなしてよいのは _bootShutdownId の現在のセッション（スリープは _sleepWakeId）だけ。
-            // 他の shutdown_time/wake_time が NULL の行は孤立（クラッシュ等）のため boot_time/sleep_time にフォールバックする。
-            // total_hours（boot_time〜shutdown_time）にはスリープしていた時間も含まれてしまうため、
-            // sleep_hours を別途集計し、フロント側で total_hours - sleep_hours を「実際に使用していた時間」として表示する
-            var query = $@"
-WITH ds(date) AS (
-    VALUES {dateParamNames}
-)
-SELECT ds.date AS date,
-    COALESCE(
-        (
-            SELECT SUM(
-                    (
-                        MIN(
-                            julianday(
-                                COALESCE(
-                                    bs.shutdown_time,
-                                    CASE
-                                        WHEN bs.id = @currentBootId THEN @now
-                                        ELSE bs.boot_time
-                                    END
-                                )
-                            ),
-                            julianday(datetime(ds.date, '+1 day'))
-                        ) - MAX(julianday(bs.boot_time), julianday(ds.date))
-                    ) * 24.0
-                )
-            FROM boot_shutdown bs
-            WHERE julianday(bs.boot_time) < julianday(datetime(ds.date, '+1 day'))
-                AND julianday(
-                    COALESCE(
-                        bs.shutdown_time,
-                        CASE
-                            WHEN bs.id = @currentBootId THEN @now
-                            ELSE bs.boot_time
-                        END
-                    )
-                ) >= julianday(ds.date)
-        ),
-        0
-    ) AS total_hours,
-    COALESCE(
-        (
-            SELECT SUM(
-                    (
-                        MIN(
-                            julianday(
-                                COALESCE(
-                                    sw.wake_time,
-                                    CASE
-                                        WHEN sw.id = @currentSleepId THEN @now
-                                        ELSE sw.sleep_time
-                                    END
-                                )
-                            ),
-                            julianday(datetime(ds.date, '+1 day'))
-                        ) - MAX(julianday(sw.sleep_time), julianday(ds.date))
-                    ) * 24.0
-                )
-            FROM sleep_wake sw
-            WHERE sw.sleep_time IS NOT NULL
-                AND julianday(sw.sleep_time) < julianday(datetime(ds.date, '+1 day'))
-                AND julianday(
-                    COALESCE(
-                        sw.wake_time,
-                        CASE
-                            WHEN sw.id = @currentSleepId THEN @now
-                            ELSE sw.sleep_time
-                        END
-                    )
-                ) >= julianday(ds.date)
-        ),
-        0
-    ) AS sleep_hours
-FROM ds
-ORDER BY ds.date ASC";
-
-            await using var cmd = new SqliteCommand(query, conn);
-            cmd.Parameters.AddWithValue("@now", DateTime.Now);
-            cmd.Parameters.AddWithValue("@currentBootId", (object?)_bootShutdownId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@currentSleepId", (object?)_sleepWakeId ?? DBNull.Value);
-            for (int i = 0; i < dates.Length; i++) {
-                cmd.Parameters.AddWithValue($"@d{i}", dates[i].ToString("yyyy-MM-dd"));
-            }
-            await using var reader = await cmd.ExecuteReaderAsync();
-            var results = new List<object>();
-            while (await reader.ReadAsync()) {
-                var totalHours = Convert.ToDouble(reader["total_hours"]);
-                var sleepHours = Math.Min(Convert.ToDouble(reader["sleep_hours"]), totalHours);
-                results.Add(new {
-                    date = reader["date"].ToString(),
-                    total_hours = Math.Round(totalHours, 2),
-                    sleep_hours = Math.Round(sleepHours, 2)
-                });
-            }
-            return JsonSerializer.Serialize(new { type = "bootDurations", data = results });
-        } catch (Exception ex) {
-            Debug.WriteLine($"GetDailyBootDurationJsonAsync error: {ex.Message}");
-            return "{\"type\":\"bootDurations\",\"data\":[]}";
-        }
-    }
-
-    // date（yyyy-MM-dd）の使用時間を 0〜23 時の 1 時間ごとに集計する。
-    // 週のグラフと同じく「起動していた時間 - スリープしていた時間」を使用時間とし、各行を 1 時間の枠に切り詰めて足す。
-    // 応答に date を含めるのは、日を続けて切り替えたときに、前の日の応答を画面側で捨てられるようにするため
-    public async Task<string> GetHourlyUsageJsonAsync(string date) {
-        var emptyJson = JsonSerializer.Serialize(new { type = "hourlyUsage", date, data = Array.Empty<object>() });
-        try {
-            if (!DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) return emptyJson;
-
-            await using var conn = new SqliteConnection(connectionString);
-            await conn.OpenAsync();
-
-            var hourParamNames = string.Join(", ", Enumerable.Range(0, 24).Select(i => $"({i}, @h{i})"));
-
-            // NULL の終了時刻の扱いは GetDailyBootDurationJsonAsync と同じ。
-            // julianday(hs.hour_start) 以降に終わった行だけを対象にするので、まだ来ていない時間帯は 0 になる
-            var query = $@"
-WITH hs(hour, hour_start) AS (
-    VALUES {hourParamNames}
-)
-SELECT hs.hour AS hour,
-    COALESCE(
-        (
-            SELECT SUM(
-                    (
-                        MIN(
-                            julianday(
-                                COALESCE(
-                                    bs.shutdown_time,
-                                    CASE
-                                        WHEN bs.id = @currentBootId THEN @now
-                                        ELSE bs.boot_time
-                                    END
-                                )
-                            ),
-                            julianday(datetime(hs.hour_start, '+1 hour'))
-                        ) - MAX(julianday(bs.boot_time), julianday(hs.hour_start))
-                    ) * 24.0
-                )
-            FROM boot_shutdown bs
-            WHERE julianday(bs.boot_time) < julianday(datetime(hs.hour_start, '+1 hour'))
-                AND julianday(
-                    COALESCE(
-                        bs.shutdown_time,
-                        CASE
-                            WHEN bs.id = @currentBootId THEN @now
-                            ELSE bs.boot_time
-                        END
-                    )
-                ) >= julianday(hs.hour_start)
-        ),
-        0
-    ) AS total_hours,
-    COALESCE(
-        (
-            SELECT SUM(
-                    (
-                        MIN(
-                            julianday(
-                                COALESCE(
-                                    sw.wake_time,
-                                    CASE
-                                        WHEN sw.id = @currentSleepId THEN @now
-                                        ELSE sw.sleep_time
-                                    END
-                                )
-                            ),
-                            julianday(datetime(hs.hour_start, '+1 hour'))
-                        ) - MAX(julianday(sw.sleep_time), julianday(hs.hour_start))
-                    ) * 24.0
-                )
-            FROM sleep_wake sw
-            WHERE sw.sleep_time IS NOT NULL
-                AND julianday(sw.sleep_time) < julianday(datetime(hs.hour_start, '+1 hour'))
-                AND julianday(
-                    COALESCE(
-                        sw.wake_time,
-                        CASE
-                            WHEN sw.id = @currentSleepId THEN @now
-                            ELSE sw.sleep_time
-                        END
-                    )
-                ) >= julianday(hs.hour_start)
-        ),
-        0
-    ) AS sleep_hours
-FROM hs
-ORDER BY hs.hour ASC";
-
-            await using var cmd = new SqliteCommand(query, conn);
-            cmd.Parameters.AddWithValue("@now", DateTime.Now);
-            cmd.Parameters.AddWithValue("@currentBootId", (object?)_bootShutdownId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@currentSleepId", (object?)_sleepWakeId ?? DBNull.Value);
-            for (int i = 0; i < 24; i++) {
-                cmd.Parameters.AddWithValue($"@h{i}", day.AddHours(i).ToString("yyyy-MM-dd HH:mm:ss"));
-            }
-
-            await using var reader = await cmd.ExecuteReaderAsync();
-            var results = new List<object>();
-            while (await reader.ReadAsync()) {
-                var usageHours = Convert.ToDouble(reader["total_hours"]) - Convert.ToDouble(reader["sleep_hours"]);
-                results.Add(new {
-                    hour = Convert.ToInt32(reader["hour"]),
-                    usage_hours = Math.Round(Math.Max(0, usageHours), 4)
-                });
-            }
-            return JsonSerializer.Serialize(new { type = "hourlyUsage", date, data = results });
-        } catch (Exception ex) {
-            Debug.WriteLine($"GetHourlyUsageJsonAsync error: {ex.Message}");
-            return emptyJson;
-        }
-    }
-
-    // dayOffset: 0 が今日、-1 が昨日
-    public async Task<string> GetActiveWindowDurationJsonAsync(int dayOffset = 0) {
-        try {
-            await using var conn = new SqliteConnection(connectionString);
-            await conn.OpenAsync();
-
-            // 対象日の0時から翌日の0時までの範囲で計算
-            var dayStart = DateTime.Today.AddDays(dayOffset);
-            var dayEnd = dayStart.AddDays(1);
-            var now = DateTime.Now;
-
-            // @now まで表示中とみなしてよいのは _currentWindowRecordId の行だけ。他の end_time NULL 行は孤立（強制終了等）のため start_time にフォールバックする。
-            // 表示名（app_name）があればそれで集計し、なければ記録したプロセス名のまま表示する
-            const string query = @"
-SELECT COALESCE(n.display_name, aw.window_title) AS window_title,
-    SUM(
-        (
-            julianday(
-                MIN(
-                    COALESCE(
-                        aw.end_time,
-                        CASE
-                            WHEN aw.id = @currentWindowRecordId THEN @now
-                            ELSE aw.start_time
-                        END
-                    ),
-                    @dayEnd
-                )
-            ) - julianday(aw.start_time)
-        ) * 24.0
-    ) AS duration_hours,
-    MAX(n.icon) AS icon
-FROM active_window aw
-    LEFT JOIN app_name n ON n.process_name = aw.window_title
-WHERE aw.start_time >= @dayStart
-    AND aw.start_time < @dayEnd
-GROUP BY COALESCE(n.display_name, aw.window_title)
-HAVING duration_hours > 0
-ORDER BY duration_hours DESC";
-
-            await using var cmd = new SqliteCommand(query, conn);
-            cmd.Parameters.AddWithValue("@now", now);
-            cmd.Parameters.AddWithValue("@dayStart", dayStart);
-            cmd.Parameters.AddWithValue("@dayEnd", dayEnd);
-            cmd.Parameters.AddWithValue("@currentWindowRecordId", (object?)_currentWindowRecordId ?? DBNull.Value);
-
-            await using var reader = await cmd.ExecuteReaderAsync();
-            var results = new List<object>();
-            while (await reader.ReadAsync()) {
-                results.Add(new {
-                    window_title = reader["window_title"].ToString(),
-                    duration_hours = Math.Round(Convert.ToDouble(reader["duration_hours"]), 4),
-                    icon = reader["icon"] is byte[] bytes
-                        ? "data:image/png;base64," + Convert.ToBase64String(bytes)
-                        : null
-                });
-            }
-            return JsonSerializer.Serialize(new { type = "activeWindowDurations", data = results });
-        } catch (Exception ex) {
-            Debug.WriteLine($"GetActiveWindowDurationJsonAsync error: {ex.Message}");
-            return "{\"type\":\"activeWindowDurations\",\"data\":[]}";
         }
     }
 }

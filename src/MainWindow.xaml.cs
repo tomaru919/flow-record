@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Interop;
 using System.Diagnostics;
@@ -199,23 +201,35 @@ public partial class MainWindow : Window {
     private async void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e) {
         var message = e.TryGetWebMessageAsString();
         if (message == "getActiveWindowRecords") {
-            var json = await _monitorService.GetRecordsJsonAsync();
-            webView.CoreWebView2.PostWebMessageAsJson(json);
+            var data = await _monitorService.GetRecordsAsync();
+            PostMessage(new { type = "activeWindowRecords", data });
         } else if (message != null && message.StartsWith("getBootDurations")) {
             var parts = message.Split(':');
             var weekOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;
-            var json = await _monitorService.GetDailyBootDurationJsonAsync(weekOffset);
-            webView.CoreWebView2.PostWebMessageAsJson(json);
+            var data = await _monitorService.GetDailyBootDurationsAsync(weekOffset);
+            PostMessage(new { type = "bootDurations", data });
         } else if (message != null && message.StartsWith("getHourlyUsage:")) {
+            // 応答に date を含めるのは、日を続けて切り替えたときに、前の日の応答を画面側で捨てられるようにするため
             var date = message["getHourlyUsage:".Length..];
-            var json = await _monitorService.GetHourlyUsageJsonAsync(date);
-            webView.CoreWebView2.PostWebMessageAsJson(json);
+            List<HourlyUsage> data = DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+                ? await _monitorService.GetHourlyUsageAsync(day)
+                : [];
+            PostMessage(new { type = "hourlyUsage", date, data });
         } else if (message != null && message.StartsWith("getActiveWindowDurations")) {
             var parts = message.Split(':');
             var dayOffset = parts.Length > 1 && int.TryParse(parts[1], out var offset) ? offset : 0;
-            var json = await _monitorService.GetActiveWindowDurationJsonAsync(dayOffset);
-            webView.CoreWebView2.PostWebMessageAsJson(json);
+            var data = await _monitorService.GetActiveWindowDurationsAsync(dayOffset);
+            PostMessage(new { type = "activeWindowDurations", data });
         }
+    }
+
+    // フロント側の型（types.d.ts）は window_title のようなスネークケースなので、record の名前を変換して送る
+    private static readonly JsonSerializerOptions WebMessageJsonOptions = new() {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+
+    private void PostMessage(object message) {
+        webView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, WebMessageJsonOptions));
     }
 
     // ×ボタンで終了させず、トレイ常駐（Hide）にする

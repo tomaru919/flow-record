@@ -405,3 +405,16 @@ FlowRecord の開発セッションごとの変更・修正の記録。
     - The session was recorded as `boot_shutdown` id 65, with `shutdown_time` and `last_seen` set. 34 `active_window` rows from 11:21:44 to 11:28:21 were all closed.
     - The only rows with a NULL end time are `boot_shutdown` id 9 and `active_window` id 264, both from September 2026. Their `last_seen` is NULL, so the repair leaves them alone as intended.
   - Not checked: the repair of a new orphan row. No such row existed before this launch.
+
+### 2026-11-07: Move the Usage Queries to a UsageQueries Class
+- **New `src/UsageQueries.cs`**: The four `Get...JsonAsync` methods moved out of `MonitorService` into `UsageQueries(string connectionString)`. The SQL is unchanged.
+  - `GetRecordsAsync`, `GetDailyBootDurationsAsync`, `GetHourlyUsageAsync`, and `GetActiveWindowDurationsAsync` return lists of records (`ActivityRecord`, `BootDuration`, `HourlyUsage`, `ActiveWindowDuration`) instead of JSON strings.
+  - The class holds no state. The in-progress IDs come in as `CurrentRecordIds(BootShutdownId, WindowRecordId, SleepWakeId)`, and the current time comes in as `now` (previously `DateTime.Now` / `DateTime.Today` inside each method). This lets tests pass fixed IDs and times.
+  - On an error, each method logs with `Debug.WriteLine` and returns an empty list. `GetRecordsAsync` used to swallow errors without logging.
+- **`MonitorService`**: Creates and owns the `UsageQueries`. Four thin public methods (`GetRecordsAsync`, `GetDailyBootDurationsAsync`, `GetHourlyUsageAsync`, `GetActiveWindowDurationsAsync`) pass the private `CurrentIds` and `DateTime.Now` through to it. Removed the now-unused `System.Globalization` and `System.Text.Json` usings.
+  - At first `MainWindow` created the `UsageQueries`, as the split plan said. That made `MainWindow` depend on both classes, and `MonitorService` had to expose `ConnectionString` and `CurrentIds` just for it. So `MonitorService` owns it instead, and `MainWindow` only talks to `MonitorService`, as before the split.
+- **`MainWindow`**: Builds the WebView2 messages itself (`{ type, data }`, plus `date` for `hourlyUsage`). `PostMessage` serializes them with `JsonNamingPolicy.SnakeCaseLower`, so the keys stay `window_title`, `total_hours`, and so on. The `yyyy-MM-dd` check for `getHourlyUsage:` moved here.
+- **Verified**:
+  - `dotnet build` passes with 0 warnings and 0 errors.
+  - A scratch console app ran the four queries against `flowrecord.debug.db` in read-only mode. The serialized keys match `frontend/src/types.d.ts`.
+  - Not checked: running the app itself.
