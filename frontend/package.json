@@ -26,7 +26,7 @@
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.3.7"
+    "vite": "^7.3.8"
   },
   "allowScripts": {
     "@swc/core@1.15.3": true,

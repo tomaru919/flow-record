@@ -418,3 +418,9 @@ FlowRecord の開発セッションごとの変更・修正の記録。
   - `dotnet build` passes with 0 warnings and 0 errors.
   - A scratch console app ran the four queries against `flowrecord.debug.db` in read-only mode. The serialized keys match `frontend/src/types.d.ts`.
   - Not checked: running the app itself.
+
+### 2026-11-19: Run npm audit fix in the Frontend
+- **Change**: `npm audit fix` (without `--force`) updated `vite` 7.3.7 → 7.3.8, `tinyglobby` 0.2.15 → 0.2.17, and `picomatch` 4.0.4 → 4.0.7. `package.json` now asks for `vite ^7.3.8`. The `typescript-eslint` 8.73.0 update from the same run was already committed in d1bca96, which removed the minimatch advisory.
+- **Remaining**: 10 high advisories, all from picomatch (GHSA-fc5q-39xc-vjpf) via `vite` and `typescript-eslint` → `tinyglobby`. No fixed picomatch exists yet. These are devDependencies only, so the built `wwwroot` and FlowRecord.exe are not affected.
+  - Do not run `npm audit fix --force`: it would downgrade `vite` to 6.2.7.
+- **Verified**: `npm run lint` and `npm run build` both pass.
